@@ -1,0 +1,29 @@
+{
+  "name": "secrets-scan",
+  "version": "0.1.0",
+  "description": "Scan a directory or the files tracked by git for likely secrets",
+  "type": "module",
+  "bin": {
+    "secrets-scan": "bin/secrets-scan.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "secrets",
+    "security",
+    "scanner",
+    "cli"
+  ],
+  "author": "Avery Lane",
+  "license": "MIT"
+}
