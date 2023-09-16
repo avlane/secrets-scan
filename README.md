@@ -5,3 +5,7 @@ private keys and high-entropy strings. No dependencies, nothing leaves your mach
 
 Work in progress. Planned: provider-specific patterns, an entropy detector, an allowlist
 file, baselines for existing findings, and JSON / SARIF output.
+
+    npx secrets-scan [PATH...]
+
+Exit status: 0 when nothing was found, 1 when secrets were found, 2 on errors.
