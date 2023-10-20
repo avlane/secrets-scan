@@ -14,6 +14,7 @@ export function scanText(text, filePath, rules) {
       const match = rule.pattern.exec(line);
       if (!match) continue;
       const secret = match[rule.group ?? 0];
+      if (rule.validate && !rule.validate(secret, line)) continue;
       const column = match.index + match[0].indexOf(secret) + 1;
       findings.push({
         ruleId: rule.id,

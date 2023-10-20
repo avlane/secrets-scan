@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { RULES } from "../src/rules.js";
+import { RULES, looksLikePlaceholder } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
-import { AWS_KEY, GITHUB_TOKEN, PRIVATE_KEY_HEADER } from "./fakes.js";
+import { AWS_KEY, GITHUB_TOKEN, PRIVATE_KEY_HEADER, SLACK_TOKEN, SLACK_WEBHOOK } from "./fakes.js";
 
 const scan = (text) => scanText(text, "file.txt", RULES);
 
@@ -46,6 +46,45 @@ describe("scanText", () => {
     assert.equal(scan(PRIVATE_KEY_HEADER)[0]?.ruleId, "private-key");
     assert.deepEqual(scan("-----BEGIN PUBLIC KEY-----"), []);
     assert.deepEqual(scan("-----BEGIN CERTIFICATE-----"), []);
+  });
+
+  it("finds Slack tokens and webhooks", () => {
+    assert.equal(scan(`SLACK_BOT=${SLACK_TOKEN}`)[0]?.ruleId, "slack-token");
+    assert.equal(scan(`hook: "${SLACK_WEBHOOK}"`)[0]?.ruleId, "slack-webhook");
+  });
+
+  it("finds hard-coded credentials in assignments", () => {
+    const cases = [
+      'password = "s3cr3tValue99"',
+      "DB_PASSWORD: 'Tr0ub4dor&3xyz'",
+      'const apiKey = "k8d92jfh38dh2"',
+      '{"client_secret": "a8f5f167f44f4964e6c998dee827110c"}',
+      "auth_token='b7e2c9d1f0a34'",
+    ];
+    for (const line of cases) {
+      const found = scan(line);
+      assert.equal(found.length, 1, line);
+      assert.equal(found[0].ruleId, "generic-secret-assignment", line);
+    }
+    const [finding] = scan('password = "s3cr3tValue99"');
+    assert.equal(finding.secret, "s3cr3tValue99");
+    assert.equal(finding.column, 13);
+  });
+
+  it("ignores short values and values that are not quoted literals", () => {
+    assert.deepEqual(scan('password = "short"'), []);
+    assert.deepEqual(scan("password = getPassword()"), []);
+    assert.deepEqual(scan("const token = process.argv[2];"), []);
+    assert.deepEqual(scan('password = ""'), []);
+  });
+
+  it("ignores placeholders", () => {
+    for (const value of ["changeme123", "your_password_here", "xxxxxxxxxxxx", "************",
+      "aaaaaaaaaaaa", "EXAMPLE_TOKEN_VALUE", "placeholder-value", "dummyvalue123"]) {
+      assert.deepEqual(scan(`secret = "${value}"`), [], value);
+      assert.ok(looksLikePlaceholder(value), value);
+    }
+    assert.ok(!looksLikePlaceholder("k8d92jfh38dh2"));
   });
 
   it("does not match keys that are part of a longer word", () => {
