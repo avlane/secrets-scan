@@ -20,6 +20,7 @@ Scan files below each PATH (default: the current directory) for likely secrets.
 Options:
   -h, --help       show this help
   -v, --version    show the version
+      --no-entropy do not look for high-entropy strings, only for known patterns
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -27,6 +28,7 @@ Exit status: 0 nothing found, 1 secrets found, 2 error.
 const OPTIONS = {
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
+  "no-entropy": { type: "boolean" },
 };
 
 export async function main(argv, io = {}) {
@@ -64,7 +66,7 @@ export async function main(argv, io = {}) {
     for (const file of files) {
       if (hasBinaryExtension(file)) continue;
       const relative = path.relative(base, file).split(path.sep).join("/");
-      findings.push(...scanFile(file, relative, RULES));
+      findings.push(...scanFile(file, relative, RULES, { entropy: !values["no-entropy"] }));
     }
   }
 

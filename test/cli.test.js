@@ -37,6 +37,15 @@ describe("cli", () => {
     assert.deepEqual(stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["b.env:1:7", "a/key.txt:1:1"]);
   });
 
+  it("finds high-entropy strings unless told not to", async () => {
+    const files = { "app.conf": "blob = wJalrXUtnFEMI/K7MDENG/bPxRfi" + "CYzEXAMPLEKEY\n" };
+    const found = await run(files);
+    assert.equal(found.code, 1);
+    assert.match(found.stdout, /high-entropy-string/);
+    const without = await run(files, ["--no-entropy"]);
+    assert.equal(without.code, 0);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);
