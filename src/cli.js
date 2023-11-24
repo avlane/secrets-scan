@@ -21,6 +21,7 @@ Options:
   -h, --help       show this help
   -v, --version    show the version
       --no-entropy do not look for high-entropy strings, only for known patterns
+      --show-secrets  print the matched text instead of masking it
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -29,6 +30,7 @@ const OPTIONS = {
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
   "no-entropy": { type: "boolean" },
+  "show-secrets": { type: "boolean" },
 };
 
 export async function main(argv, io = {}) {
@@ -70,6 +72,6 @@ export async function main(argv, io = {}) {
     }
   }
 
-  stdout.write(formatText(findings));
+  stdout.write(formatText(findings, { showSecrets: values["show-secrets"] }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

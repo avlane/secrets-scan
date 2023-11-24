@@ -29,6 +29,12 @@ describe("cli", () => {
     assert.ok(!stdout.includes(AWS_KEY));
   });
 
+  it("shows the matched text only with --show-secrets", async () => {
+    const files = { "a.env": `KEY=${AWS_KEY}\n` };
+    assert.ok(!(await run(files)).stdout.includes(AWS_KEY));
+    assert.ok((await run(files, ["--show-secrets"])).stdout.includes(AWS_KEY));
+  });
+
   it("reports files in walk order, one line per finding", async () => {
     const { stdout } = await run({
       "b.env": `TOKEN=${GITHUB_TOKEN}\n`,
