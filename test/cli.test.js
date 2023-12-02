@@ -52,6 +52,28 @@ describe("cli", () => {
     assert.equal(without.code, 0);
   });
 
+  it("prints JSON with --format json", async () => {
+    const { code, stdout } = await run({ "k.env": `KEY=${AWS_KEY}\n` }, ["--format", "json"]);
+    assert.equal(code, 1);
+    const doc = JSON.parse(stdout);
+    assert.equal(doc.summary.total, 1);
+    assert.equal(doc.findings[0].rule, "aws-access-key-id");
+    assert.match(doc.findings[0].fingerprint, /^[0-9a-f]{32}$/);
+    assert.ok(!stdout.includes(AWS_KEY));
+  });
+
+  it("prints valid JSON when nothing is found", async () => {
+    const { code, stdout } = await run({ "a.txt": "hello\n" }, ["-f", "json"]);
+    assert.equal(code, 0);
+    assert.equal(JSON.parse(stdout).summary.total, 0);
+  });
+
+  it("rejects unknown formats", async () => {
+    const { code, stderr } = await run({}, ["--format", "xml"]);
+    assert.equal(code, 2);
+    assert.match(stderr, /unknown format 'xml'/);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

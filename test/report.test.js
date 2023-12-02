@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { display, formatText, redact } from "../src/report.js";
+import { display, formatJson, formatText, redact, summarize } from "../src/report.js";
 
 describe("redact", () => {
   it("masks short secrets completely", () => {
@@ -18,6 +18,35 @@ describe("redact", () => {
     const secret = "q".repeat(500) + "TAIL";
     assert.ok(!redact(secret).includes("TAIL"));
     assert.ok(redact(secret).length <= 16);
+  });
+});
+
+describe("formatJson", () => {
+  const finding = {
+    path: "a.env", line: 2, column: 5, endColumn: 25, ruleId: "aws-access-key-id", severity: "high",
+    message: "AWS access key ID", secret: "AKIAIOSFODNN7EXAMPLE", fingerprint: "f".repeat(32),
+  };
+
+  it("has a stable document shape and masks secrets", () => {
+    const doc = JSON.parse(formatJson([finding], { version: "9.9.9" }));
+    assert.deepEqual(doc, {
+      version: 1,
+      tool: { name: "secrets-scan", version: "9.9.9" },
+      summary: { total: 1, bySeverity: { high: 1, medium: 0, low: 0 } },
+      findings: [{
+        rule: "aws-access-key-id", severity: "high", message: "AWS access key ID", path: "a.env",
+        line: 2, column: 5, endColumn: 25, match: "AKIA************", fingerprint: "f".repeat(32),
+      }],
+    });
+  });
+
+  it("can include the secret", () => {
+    assert.equal(JSON.parse(formatJson([finding], { showSecrets: true })).findings[0].match, "AKIAIOSFODNN7EXAMPLE");
+  });
+
+  it("is valid for no findings", () => {
+    assert.deepEqual(JSON.parse(formatJson([])).findings, []);
+    assert.equal(summarize([]).total, 0);
   });
 });
 

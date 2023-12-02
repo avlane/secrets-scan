@@ -1,6 +1,7 @@
 import fs from "node:fs";
 
 import { findHighEntropyStrings } from "./entropy.js";
+import { fingerprint } from "./fingerprint.js";
 import { looksBinary } from "./walk.js";
 
 const ENTROPY_RULE_ID = "high-entropy-string";
@@ -29,6 +30,7 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
         column,
         endColumn: column + secret.length,
         secret,
+        fingerprint: fingerprint(rule.id, filePath, secret),
       });
     }
     if (entropy) {
@@ -46,6 +48,7 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
           column,
           endColumn,
           secret: token,
+          fingerprint: fingerprint(ENTROPY_RULE_ID, filePath, token),
         });
       }
     }

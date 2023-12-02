@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatText } from "./report.js";
+import { formatJson, formatText } from "./report.js";
 import { RULES } from "./rules.js";
 import { scanFile } from "./scanner.js";
 import { hasBinaryExtension, walk } from "./walk.js";
@@ -22,6 +22,7 @@ Options:
   -v, --version    show the version
       --no-entropy do not look for high-entropy strings, only for known patterns
       --show-secrets  print the matched text instead of masking it
+  -f, --format FMT  output format: text (default) or json
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -31,7 +32,9 @@ const OPTIONS = {
   version: { type: "boolean", short: "v" },
   "no-entropy": { type: "boolean" },
   "show-secrets": { type: "boolean" },
+  format: { type: "string", short: "f", default: "text" },
 };
+const FORMATS = ["text", "json"];
 
 export async function main(argv, io = {}) {
   const stdout = io.stdout ?? process.stdout;
@@ -55,6 +58,10 @@ export async function main(argv, io = {}) {
     return EXIT_CLEAN;
   }
 
+  if (!FORMATS.includes(values.format)) {
+    stderr.write(`secrets-scan: unknown format '${values.format}' (use ${FORMATS.join(" or ")})\n`);
+    return EXIT_ERROR;
+  }
   const roots = positionals.length > 0 ? positionals : ["."];
   const findings = [];
   for (const root of roots) {
@@ -72,6 +79,7 @@ export async function main(argv, io = {}) {
     }
   }
 
-  stdout.write(formatText(findings, { showSecrets: values["show-secrets"] }));
+  const options = { showSecrets: values["show-secrets"], version: pkg.version };
+  stdout.write(values.format === "json" ? formatJson(findings, options) : formatText(findings, options));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

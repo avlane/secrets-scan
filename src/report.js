@@ -9,6 +9,32 @@ export function display(secret, showSecrets) {
   return showSecrets ? secret : redact(secret);
 }
 
+export function summarize(findings) {
+  const bySeverity = { high: 0, medium: 0, low: 0 };
+  for (const finding of findings) bySeverity[finding.severity] += 1;
+  return { total: findings.length, bySeverity };
+}
+
+export function formatJson(findings, { showSecrets = false, version = "0.0.0" } = {}) {
+  const document = {
+    version: 1,
+    tool: { name: "secrets-scan", version },
+    summary: summarize(findings),
+    findings: findings.map((f) => ({
+      rule: f.ruleId,
+      severity: f.severity,
+      message: f.message,
+      path: f.path,
+      line: f.line,
+      column: f.column,
+      endColumn: f.endColumn,
+      match: display(f.secret, showSecrets),
+      fingerprint: f.fingerprint,
+    })),
+  };
+  return JSON.stringify(document, null, 2) + "\n";
+}
+
 export function formatText(findings, { showSecrets = false } = {}) {
   if (findings.length === 0) return "";
   return findings
