@@ -9,3 +9,9 @@ file, baselines for existing findings, and JSON / SARIF output.
     npx secrets-scan [PATH...]
 
 Exit status: 0 when nothing was found, 1 when secrets were found, 2 on errors.
+Restrict the scan with `--include GLOB` and `--exclude GLOB` (both repeatable):
+
+    secrets-scan . --exclude vendor --exclude '*.snap' --include '*.env'
+
+Patterns without a `/` match names anywhere; patterns with a `/` start at the scanned
+directory; `**` crosses directories.

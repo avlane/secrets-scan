@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { formatJson, formatText } from "./report.js";
 import { RULES } from "./rules.js";
 import { scanFile } from "./scanner.js";
+import { createMatcher } from "./glob.js";
 import { hasBinaryExtension, walk } from "./walk.js";
 
 const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -23,6 +24,8 @@ Options:
       --no-entropy do not look for high-entropy strings, only for known patterns
       --show-secrets  print the matched text instead of masking it
   -f, --format FMT  output format: text (default) or json
+      --include GLOB  only scan files matching GLOB (repeatable)
+      --exclude GLOB  skip files and directories matching GLOB (repeatable)
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -33,6 +36,8 @@ const OPTIONS = {
   "no-entropy": { type: "boolean" },
   "show-secrets": { type: "boolean" },
   format: { type: "string", short: "f", default: "text" },
+  include: { type: "string", multiple: true },
+  exclude: { type: "string", multiple: true },
 };
 const FORMATS = ["text", "json"];
 
@@ -62,6 +67,8 @@ export async function main(argv, io = {}) {
     stderr.write(`secrets-scan: unknown format '${values.format}' (use ${FORMATS.join(" or ")})\n`);
     return EXIT_ERROR;
   }
+  const include = createMatcher(values.include ?? []);
+  const exclude = createMatcher(values.exclude ?? []);
   const roots = positionals.length > 0 ? positionals : ["."];
   const findings = [];
   for (const root of roots) {
@@ -70,7 +77,7 @@ export async function main(argv, io = {}) {
       stderr.write(`secrets-scan: no such file or directory: ${root}\n`);
       return EXIT_ERROR;
     }
-    const files = fs.statSync(absoluteRoot).isDirectory() ? walk(absoluteRoot) : [absoluteRoot];
+    const files = fs.statSync(absoluteRoot).isDirectory() ? walk(absoluteRoot, { include, exclude }) : [absoluteRoot];
     const base = fs.statSync(absoluteRoot).isDirectory() ? absoluteRoot : path.dirname(absoluteRoot);
     for (const file of files) {
       if (hasBinaryExtension(file)) continue;

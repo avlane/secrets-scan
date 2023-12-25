@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
+import { createMatcher } from "../src/glob.js";
 import { hasBinaryExtension, looksBinary, walk } from "../src/walk.js";
 import { makeTree } from "./helpers.js";
 
@@ -30,6 +31,14 @@ describe("walk", () => {
     const dir = tree({ "build/a.js": "", "src/b.js": "" });
     const found = [...walk(dir, { ignoredDirs: ["build"] })].map((f) => path.basename(f));
     assert.deepEqual(found, ["b.js"]);
+  });
+
+  it("prunes excluded directories and applies include globs to files", () => {
+    const dir = tree({ "src/a.js": "", "src/a.test.js": "", "vendor/big/b.js": "", "docs/c.md": "" });
+    const names = (options) => [...walk(dir, options)].map((f) => path.relative(dir, f).split(path.sep).join("/"));
+    assert.deepEqual(names({ exclude: createMatcher(["vendor"]) }), ["docs/c.md", "src/a.js", "src/a.test.js"]);
+    assert.deepEqual(names({ include: createMatcher(["*.js"]) }), ["src/a.js", "src/a.test.js", "vendor/big/b.js"]);
+    assert.deepEqual(names({ include: createMatcher(["*.js"]), exclude: createMatcher(["*.test.js", "vendor/"]) }), ["src/a.js"]);
   });
 
   it("returns nothing for an empty or missing directory", () => {

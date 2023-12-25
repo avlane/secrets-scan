@@ -22,9 +22,11 @@ export function looksBinary(buffer) {
 
 /**
  * Yield the path of every regular file below `root`, in a stable order.
- * Symbolic links are not followed.
+ * Symbolic links are not followed. `exclude` and `include` are glob matchers (see
+ * glob.js): excluded directories are not entered, and when `include` is given only
+ * the files it matches are yielded.
  */
-export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS } = {}) {
+export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS, include = null, exclude = null } = {}) {
   const stack = [root];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -38,9 +40,14 @@ export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS } = {}) {
     const subdirs = [];
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
+      const relative = path.relative(root, full).split(path.sep).join("/");
       if (entry.isDirectory()) {
-        if (!ignoredDirs.includes(entry.name)) subdirs.push(full);
+        if (ignoredDirs.includes(entry.name)) continue;
+        if (exclude?.matches(relative, true)) continue;
+        subdirs.push(full);
       } else if (entry.isFile()) {
+        if (exclude?.matches(relative)) continue;
+        if (include && include.size > 0 && !include.matches(relative)) continue;
         yield full;
       }
     }

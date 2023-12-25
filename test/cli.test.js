@@ -74,6 +74,17 @@ describe("cli", () => {
     assert.match(stderr, /unknown format 'xml'/);
   });
 
+  it("honours --include and --exclude", async () => {
+    const files = { "src/a.env": `K=${AWS_KEY}\n`, "docs/b.md": `K=${AWS_KEY}\n`, "vendor/c.env": `K=${AWS_KEY}\n` };
+    const all = await run(files);
+    assert.equal(all.stdout.trim().split("\n").length, 3);
+    const onlyEnv = await run(files, ["--include", "*.env"]);
+    assert.equal(onlyEnv.stdout.trim().split("\n").length, 2);
+    const noVendor = await run(files, ["--exclude", "vendor", "--exclude", "docs/"]);
+    assert.match(noVendor.stdout, /^src\/a\.env/);
+    assert.equal(noVendor.stdout.trim().split("\n").length, 1);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);
