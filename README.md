@@ -15,3 +15,10 @@ Restrict the scan with `--include GLOB` and `--exclude GLOB` (both repeatable):
 
 Patterns without a `/` match names anywhere; patterns with a `/` start at the scanned
 directory; `**` crosses directories.
+## Allowlist
+
+Findings that are fine can be listed in `.secrets-allowlist` (or `--allowlist FILE`), one entry
+per line, `#` for comments:
+
+    path: docs/examples/**         # every finding in these files
+    regex: ^AKIAIOSFODNN7EXAMPLE$  # findings whose secret text matches

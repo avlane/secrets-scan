@@ -85,6 +85,29 @@ describe("cli", () => {
     assert.equal(noVendor.stdout.trim().split("\n").length, 1);
   });
 
+  it("applies the default .secrets-allowlist", async () => {
+    const files = {
+      ".secrets-allowlist": "path: docs/**\nregex: ^AKIA\\w+EXAMPLE$\n",
+      "docs/a.md": `${GITHUB_TOKEN}\n`,
+      "src/b.env": `${AWS_KEY}\n`,
+      "src/c.env": `T=${GITHUB_TOKEN}\n`,
+    };
+    const { code, stdout } = await run(files);
+    assert.equal(code, 1);
+    assert.deepEqual(stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["src/c.env:1:3"]);
+  });
+
+  it("takes an explicit allowlist and fails if it is missing or invalid", async () => {
+    const files = { "k.env": `${AWS_KEY}\n`, "mine.txt": "path: k.env\n", "bad.txt": "nonsense\n" };
+    assert.equal((await run(files, ["--allowlist", "mine.txt"])).code, 0);
+    const missing = await run(files, ["--allowlist", "nope.txt"]);
+    assert.equal(missing.code, 2);
+    assert.match(missing.stderr, /cannot read allowlist/);
+    const bad = await run(files, ["--allowlist", "bad.txt"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /bad\.txt:1: expected/);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

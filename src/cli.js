@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { EMPTY_ALLOWLIST, DEFAULT_ALLOWLIST_NAME, isAllowed, loadAllowlist } from "./allowlist.js";
 import { formatJson, formatText } from "./report.js";
 import { RULES } from "./rules.js";
 import { scanFile } from "./scanner.js";
@@ -26,6 +27,7 @@ Options:
   -f, --format FMT  output format: text (default) or json
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
+      --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -38,6 +40,7 @@ const OPTIONS = {
   format: { type: "string", short: "f", default: "text" },
   include: { type: "string", multiple: true },
   exclude: { type: "string", multiple: true },
+  allowlist: { type: "string" },
 };
 const FORMATS = ["text", "json"];
 
@@ -67,6 +70,14 @@ export async function main(argv, io = {}) {
     stderr.write(`secrets-scan: unknown format '${values.format}' (use ${FORMATS.join(" or ")})\n`);
     return EXIT_ERROR;
   }
+  let allowlist = EMPTY_ALLOWLIST;
+  try {
+    const file = path.resolve(cwd, values.allowlist ?? DEFAULT_ALLOWLIST_NAME);
+    if (values.allowlist || fs.existsSync(file)) allowlist = loadAllowlist(file);
+  } catch (error) {
+    stderr.write(`secrets-scan: ${error.code === "ENOENT" ? `cannot read allowlist: ${error.message}` : error.message}\n`);
+    return EXIT_ERROR;
+  }
   const include = createMatcher(values.include ?? []);
   const exclude = createMatcher(values.exclude ?? []);
   const roots = positionals.length > 0 ? positionals : ["."];
@@ -85,6 +96,8 @@ export async function main(argv, io = {}) {
       findings.push(...scanFile(file, relative, RULES, { entropy: !values["no-entropy"] }));
     }
   }
+
+  findings.splice(0, findings.length, ...findings.filter((f) => !isAllowed(f, allowlist)));
 
   const options = { showSecrets: values["show-secrets"], version: pkg.version };
   stdout.write(values.format === "json" ? formatJson(findings, options) : formatText(findings, options));
