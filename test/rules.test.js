@@ -87,6 +87,18 @@ describe("scanText", () => {
     assert.ok(!looksLikePlaceholder("k8d92jfh38dh2"));
   });
 
+  it("honours inline ignore comments", () => {
+    assert.deepEqual(scan(`key = "${AWS_KEY}"  // secrets-scan:ignore`), []);
+    assert.deepEqual(scan(`# secrets-scan:ignore-next-line\nkey = "${AWS_KEY}"\n`), []);
+    assert.equal(scan(`# secrets-scan:ignore-next-line\nok\nkey = "${AWS_KEY}"\n`).length, 1);
+    assert.deepEqual(scan(`/* secrets-scan:ignore-file */\na = "${AWS_KEY}"\nb = "${GITHUB_TOKEN}"\n`), []);
+  });
+
+  it("an ignore comment only affects its own line", () => {
+    const text = `a = "${AWS_KEY}" # secrets-scan:ignore\nb = "${GITHUB_TOKEN}"\n`;
+    assert.deepEqual(scan(text).map((f) => f.line), [2]);
+  });
+
   it("does not match keys that are part of a longer word", () => {
     assert.deepEqual(scan(`x${AWS_KEY}`), []);
     assert.deepEqual(scan(`${AWS_KEY}X`), []);

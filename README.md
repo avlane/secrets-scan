@@ -22,3 +22,12 @@ per line, `#` for comments:
 
     path: docs/examples/**         # every finding in these files
     regex: ^AKIAIOSFODNN7EXAMPLE$  # findings whose secret text matches
+## Inline ignores
+
+Silence a single finding with a comment in the file itself:
+
+    const key = "AKIAIOSFODNN7EXAMPLE"; // secrets-scan:ignore
+    # secrets-scan:ignore-next-line
+    password = "not-a-real-password"
+
+and a whole file with `secrets-scan:ignore-file` anywhere in it.
