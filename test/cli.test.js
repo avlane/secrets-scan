@@ -17,9 +17,27 @@ async function run(files, args = []) {
 }
 
 describe("cli", () => {
-  it("exits 0 and prints nothing for a clean tree", async () => {
+  it("exits 0 and prints nothing but a summary for a clean tree", async () => {
     const { code, stdout, stderr } = await run({ "a.js": "export const a = 1;\n" });
-    assert.deepEqual([code, stdout, stderr], [0, "", ""]);
+    assert.deepEqual([code, stdout], [0, ""]);
+    assert.equal(stderr, "secrets-scan: no secrets found (scanned 1 file)\n");
+  });
+
+  it("--quiet drops the summary", async () => {
+    const { stderr } = await run({ "k.env": `${AWS_KEY}\n` }, ["--quiet"]);
+    assert.equal(stderr, "");
+  });
+
+  it("the summary counts findings and files", async () => {
+    const { stderr } = await run({ "a.env": `${AWS_KEY}\n`, "b.txt": "nothing\n" });
+    assert.equal(stderr, "secrets-scan: 1 potential secret in 1 file (1 high); scanned 2 files\n");
+  });
+
+  it("--color always colors the report; the default for a pipe does not", async () => {
+    const files = { "k.env": `${AWS_KEY}\n` };
+    assert.match((await run(files, ["--color", "always"])).stdout, /\x1b\[31m\[high\]/);
+    assert.ok(!(await run(files)).stdout.includes("\x1b["));
+    assert.equal((await run(files, ["--color", "sometimes"])).code, 2);
   });
 
   it("exits 1 and reports file, line, rule and a redacted secret", async () => {

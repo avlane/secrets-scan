@@ -3,7 +3,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { EMPTY_ALLOWLIST, DEFAULT_ALLOWLIST_NAME, isAllowed, loadAllowlist } from "./allowlist.js";
-import { formatJson, formatText } from "./report.js";
+import { formatJson, formatSummary, formatText, useColor } from "./report.js";
 import { RULES } from "./rules.js";
 import { scanFile } from "./scanner.js";
 import { createMatcher } from "./glob.js";
@@ -28,6 +28,8 @@ Options:
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
       --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
+      --color MODE  color the text report: auto (default), always or never
+  -q, --quiet       do not print the summary line on stderr
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -41,6 +43,8 @@ const OPTIONS = {
   include: { type: "string", multiple: true },
   exclude: { type: "string", multiple: true },
   allowlist: { type: "string" },
+  color: { type: "string", default: "auto" },
+  quiet: { type: "boolean", short: "q" },
 };
 const FORMATS = ["text", "json"];
 
@@ -70,6 +74,10 @@ export async function main(argv, io = {}) {
     stderr.write(`secrets-scan: unknown format '${values.format}' (use ${FORMATS.join(" or ")})\n`);
     return EXIT_ERROR;
   }
+  if (!["auto", "always", "never"].includes(values.color)) {
+    stderr.write(`secrets-scan: unknown color mode '${values.color}' (use auto, always or never)\n`);
+    return EXIT_ERROR;
+  }
   let allowlist = EMPTY_ALLOWLIST;
   try {
     const file = path.resolve(cwd, values.allowlist ?? DEFAULT_ALLOWLIST_NAME);
@@ -82,6 +90,7 @@ export async function main(argv, io = {}) {
   const exclude = createMatcher(values.exclude ?? []);
   const roots = positionals.length > 0 ? positionals : ["."];
   const findings = [];
+  let filesScanned = 0;
   for (const root of roots) {
     const absoluteRoot = path.resolve(cwd, root);
     if (!fs.existsSync(absoluteRoot)) {
@@ -93,13 +102,19 @@ export async function main(argv, io = {}) {
     for (const file of files) {
       if (hasBinaryExtension(file)) continue;
       const relative = path.relative(base, file).split(path.sep).join("/");
+      filesScanned += 1;
       findings.push(...scanFile(file, relative, RULES, { entropy: !values["no-entropy"] }));
     }
   }
 
   findings.splice(0, findings.length, ...findings.filter((f) => !isAllowed(f, allowlist)));
 
-  const options = { showSecrets: values["show-secrets"], version: pkg.version };
+  const options = {
+    showSecrets: values["show-secrets"],
+    version: pkg.version,
+    color: useColor(values.color, stdout, io.env ?? process.env),
+  };
   stdout.write(values.format === "json" ? formatJson(findings, options) : formatText(findings, options));
+  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

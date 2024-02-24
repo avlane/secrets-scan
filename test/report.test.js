@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { display, formatJson, formatText, redact, summarize } from "../src/report.js";
+import { display, formatJson, formatSummary, formatText, redact, summarize, useColor } from "../src/report.js";
 
 describe("redact", () => {
   it("masks short secrets completely", () => {
@@ -47,6 +47,43 @@ describe("formatJson", () => {
   it("is valid for no findings", () => {
     assert.deepEqual(JSON.parse(formatJson([])).findings, []);
     assert.equal(summarize([]).total, 0);
+  });
+});
+
+describe("formatSummary", () => {
+  const f = (path, severity) => ({ path, severity });
+
+  it("says when nothing was found", () => {
+    assert.equal(formatSummary([], 1), "secrets-scan: no secrets found (scanned 1 file)\n");
+    assert.equal(formatSummary([], 12), "secrets-scan: no secrets found (scanned 12 files)\n");
+  });
+
+  it("counts findings, files and severities", () => {
+    assert.equal(formatSummary([f("a", "high")], 4),
+      "secrets-scan: 1 potential secret in 1 file (1 high); scanned 4 files\n");
+    assert.equal(formatSummary([f("a", "high"), f("a", "medium"), f("b", "medium")], 9),
+      "secrets-scan: 3 potential secrets in 2 files (1 high, 2 medium); scanned 9 files\n");
+  });
+});
+
+describe("colors", () => {
+  const finding = { path: "a", line: 1, column: 1, ruleId: "r", severity: "high", message: "m", secret: "abcdefghij" };
+
+  it("are off by default and wrap parts of the line when on", () => {
+    assert.ok(!formatText([finding]).includes("\x1b["));
+    const colored = formatText([finding], { color: true });
+    assert.match(colored, /\x1b\[31m\[high\]\x1b\[0m/);
+    assert.equal(colored.replace(/\x1b\[\d+m/g, ""), formatText([finding]));
+  });
+
+  it("follow --color, NO_COLOR and the terminal", () => {
+    const tty = { isTTY: true };
+    const pipe = {};
+    assert.equal(useColor("always", pipe, { NO_COLOR: "1" }), true);
+    assert.equal(useColor("never", tty, {}), false);
+    assert.equal(useColor("auto", tty, {}), true);
+    assert.equal(useColor("auto", pipe, {}), false);
+    assert.equal(useColor("auto", tty, { NO_COLOR: "1" }), false);
   });
 });
 

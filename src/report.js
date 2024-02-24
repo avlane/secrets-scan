@@ -35,9 +35,40 @@ export function formatJson(findings, { showSecrets = false, version = "0.0.0" } 
   return JSON.stringify(document, null, 2) + "\n";
 }
 
-export function formatText(findings, { showSecrets = false } = {}) {
+const ANSI = {
+  reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
+  high: "\x1b[31m", medium: "\x1b[33m", low: "\x1b[36m",
+};
+
+function paint(text, style, enabled) {
+  return enabled ? `${ANSI[style]}${text}${ANSI.reset}` : text;
+}
+
+/** Colors on when asked for, or when writing to a terminal and NO_COLOR is not set. */
+export function useColor(mode, stream, env) {
+  if (mode === "always") return true;
+  if (mode === "never" || env.NO_COLOR) return false;
+  return Boolean(stream.isTTY);
+}
+
+export function formatText(findings, { showSecrets = false, color = false } = {}) {
   if (findings.length === 0) return "";
   return findings
-    .map((f) => `${f.path}:${f.line}:${f.column}  ${f.ruleId}  [${f.severity}]  ${f.message}: ${display(f.secret, showSecrets)}\n`)
+    .map((f) => {
+      const where = paint(`${f.path}:${f.line}:${f.column}`, "bold", color);
+      const severity = paint(`[${f.severity}]`, f.severity, color);
+      return `${where}  ${f.ruleId}  ${severity}  ${f.message}: ${paint(display(f.secret, showSecrets), "dim", color)}\n`;
+    })
     .join("");
+}
+
+/** One line for stderr: how much was scanned and what was found. */
+export function formatSummary(findings, filesScanned) {
+  const files = `${filesScanned} file${filesScanned === 1 ? "" : "s"}`;
+  if (findings.length === 0) return `secrets-scan: no secrets found (scanned ${files})\n`;
+  const { bySeverity } = summarize(findings);
+  const parts = ["high", "medium", "low"].filter((s) => bySeverity[s] > 0).map((s) => `${bySeverity[s]} ${s}`);
+  const filesWithFindings = new Set(findings.map((f) => f.path)).size;
+  const noun = findings.length === 1 ? "potential secret" : "potential secrets";
+  return `secrets-scan: ${findings.length} ${noun} in ${filesWithFindings} file${filesWithFindings === 1 ? "" : "s"} (${parts.join(", ")}); scanned ${files}\n`;
 }
