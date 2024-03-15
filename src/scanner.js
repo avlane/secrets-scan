@@ -76,9 +76,13 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
   return findings;
 }
 
-/** Read and scan one file; returns [] for binary files. */
-export function scanFile(absolutePath, relativePath, rules, options) {
-  const buffer = fs.readFileSync(absolutePath);
+/** Scan the bytes of a file; returns [] for binary content. */
+export function scanBuffer(buffer, relativePath, rules, options) {
   if (looksBinary(buffer)) return [];
   return scanText(buffer.toString("utf8"), relativePath, rules, options);
+}
+
+/** Read and scan one file. */
+export function scanFile(absolutePath, relativePath, rules, options) {
+  return scanBuffer(fs.readFileSync(absolutePath), relativePath, rules, options);
 }

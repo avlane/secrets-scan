@@ -31,3 +31,7 @@ Silence a single finding with a comment in the file itself:
     password = "not-a-real-password"
 
 and a whole file with `secrets-scan:ignore-file` anywhere in it.
+## Scanning what git tracks
+
+`secrets-scan --git` scans exactly the files `git ls-files` lists - no untracked build output,
+no ignored files - which is usually what a CI job wants.
