@@ -11,6 +11,13 @@ const BINARY_EXTENSIONS = new Set([
   ".a", ".pyc",
 ]);
 
+// Generated files are full of hashes and long tokens that are not secrets.
+export const DEFAULT_SKIPPED_FILES = [
+  "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
+  "Cargo.lock", "poetry.lock", "Pipfile.lock", "composer.lock", "Gemfile.lock", "go.sum",
+  "*.min.js", "*.min.css", "*.map",
+];
+
 export function hasBinaryExtension(file) {
   return BINARY_EXTENSIONS.has(path.extname(file).toLowerCase());
 }

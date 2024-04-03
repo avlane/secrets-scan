@@ -87,6 +87,18 @@ describe("scanText", () => {
     assert.ok(!looksLikePlaceholder("k8d92jfh38dh2"));
   });
 
+  it("ignores identifiers and translation keys used as values", () => {
+    for (const value of ["validation_failed_message", "user.password.reset", "forgot-password-link"]) {
+      assert.deepEqual(scan(`password: "${value}"`), [], value);
+    }
+    assert.equal(scan('password: "Valid_Looking-Pass9"').length, 1);
+  });
+
+  it("reports text once even when several rules match it", () => {
+    const found = scan(`"token": "${GITHUB_TOKEN}"`);
+    assert.deepEqual(found.map((f) => f.ruleId), ["github-token"]);
+  });
+
   it("honours inline ignore comments", () => {
     assert.deepEqual(scan(`key = "${AWS_KEY}"  // secrets-scan:ignore`), []);
     assert.deepEqual(scan(`# secrets-scan:ignore-next-line\nkey = "${AWS_KEY}"\n`), []);

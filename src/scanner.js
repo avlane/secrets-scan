@@ -14,6 +14,10 @@ const IGNORE_LINE = "secrets-scan:ignore";
 const IGNORE_NEXT_LINE = "secrets-scan:ignore-next-line";
 const IGNORE_FILE = "secrets-scan:ignore-file";
 
+function overlaps(finding, column, endColumn) {
+  return finding.column < endColumn && column < finding.endColumn;
+}
+
 /**
  * Scan text and return the findings, one per matching line and rule.
  * Positions are 1-based.
@@ -40,6 +44,8 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
       const secret = match[rule.group ?? 0];
       if (rule.validate && !rule.validate(secret, line)) continue;
       const column = match.index + match[0].indexOf(secret) + 1;
+      // Rules are ordered from specific to generic: the first one to explain some text wins.
+      if (lineFindings.some((f) => overlaps(f, column, column + secret.length))) continue;
       lineFindings.push({
         ruleId: rule.id,
         severity: rule.severity,
@@ -56,8 +62,8 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
       for (const { token, index: offset } of findHighEntropyStrings(line)) {
         const column = offset + 1;
         const endColumn = column + token.length;
-        // A provider rule already explained this text.
-        if (lineFindings.some((f) => f.column < endColumn && column < f.endColumn)) continue;
+        // A rule already explained this text.
+        if (lineFindings.some((f) => overlaps(f, column, endColumn))) continue;
         lineFindings.push({
           ruleId: ENTROPY_RULE_ID,
           severity: "medium",

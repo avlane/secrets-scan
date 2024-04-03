@@ -58,6 +58,23 @@ describe("findHighEntropyStrings", () => {
   });
 });
 
+describe("known non-secrets", () => {
+  const hash = "sha512-" + "Zk3Hq9sV1pXw0aT8eLmNc2YdRu7BgFjIo5KtQ4vWzA6Ex/yD+Mh1nCbPl0Su3Xr9OaVqTgJwZe8iLk==";
+  const uuid = "123e4567-e89b-12d3-a456-426614174000";
+
+  it("are not reported", () => {
+    assert.deepEqual(scanText(`"integrity": "${hash}"`, "package-lock.json", RULES), []);
+    assert.deepEqual(scanText(`id = "${uuid}"`, "a.js", RULES), []);
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg";
+    assert.deepEqual(scanText(`url(data:image/png;base64,${png})`, "a.css", RULES), []);
+  });
+
+  it("do not hide real secrets next to them", () => {
+    const found = scanText(`id=${uuid} blob=${RANDOM_BASE64}`, "a", RULES);
+    assert.deepEqual(found.map((f) => f.secret), [RANDOM_BASE64]);
+  });
+});
+
 describe("entropy findings in scanText", () => {
   it("reports a high-entropy string that no rule knows", () => {
     const [finding] = scanText(`SECRET_BLOB: ${RANDOM_BASE64}\n`, "a.yml", RULES);

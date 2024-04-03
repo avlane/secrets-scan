@@ -17,6 +17,8 @@ export function looksLikePlaceholder(value) {
   if (PLACEHOLDER_WORDS.some((word) => lower.includes(word))) return true;
   if (/^(.)\1+$/.test(value)) return true;
   if (/^[*#x.-]+$/i.test(value)) return true;
+  // snake_case, kebab-case or dotted words: translation keys and identifiers, not passwords
+  if (/^[a-z]+(?:[_.-][a-z]+)+$/.test(value)) return true;
   return false;
 }
 

@@ -8,7 +8,7 @@ import { createMatcher } from "./glob.js";
 import { formatJson, formatSummary, formatText, useColor } from "./report.js";
 import { RULES } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
-import { hasBinaryExtension, walk } from "./walk.js";
+import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
 
 const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
@@ -24,6 +24,7 @@ Options:
   -h, --help       show this help
   -v, --version    show the version
       --git        scan only the files git tracks (instead of walking the directory)
+      --no-default-skips  also scan lock files, *.min.js and source maps
       --no-entropy do not look for high-entropy strings, only for known patterns
       --show-secrets  print the matched text instead of masking it
   -f, --format FMT  output format: text (default) or json
@@ -40,6 +41,7 @@ const OPTIONS = {
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
   git: { type: "boolean" },
+  "no-default-skips": { type: "boolean" },
   "no-entropy": { type: "boolean" },
   "show-secrets": { type: "boolean" },
   format: { type: "string", short: "f", default: "text" },
@@ -129,7 +131,7 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   const context = {
     git: values.git,
     include: createMatcher(values.include ?? []),
-    exclude: createMatcher(values.exclude ?? []),
+    exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
   const scanOptions = { entropy: !values["no-entropy"] };
   const roots = positionals.length > 0 ? positionals : ["."];

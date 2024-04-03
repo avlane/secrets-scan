@@ -126,6 +126,18 @@ describe("cli", () => {
     assert.match(bad.stderr, /bad\.txt:1: expected/);
   });
 
+  it("does not scan lock files and minified bundles unless asked to", async () => {
+    const files = {
+      "package-lock.json": `{"token": "${GITHUB_TOKEN}"}\n`,
+      "dist/app.min.js": `var k="${AWS_KEY}";\n`,
+      "app.js.map": `${AWS_KEY}\n`,
+    };
+    assert.equal((await run(files)).code, 0);
+    const forced = await run(files, ["--no-default-skips"]);
+    assert.equal(forced.code, 1);
+    assert.equal(forced.stdout.trim().split("\n").length, 3);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

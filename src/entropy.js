@@ -30,12 +30,26 @@ export function isHighEntropy(token, limits = DEFAULT_LIMITS) {
   return shannonEntropy(token) > limits[charset];
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INTEGRITY = /^sha(?:1|256|384|512)-/;
+
+/**
+ * Text that has the shape of a secret but is known not to be one: UUIDs, the
+ * "sha512-..." integrity hashes of package managers and inline base64 data.
+ */
+export function isKnownNonSecret(token, line, index) {
+  if (UUID.test(token) || INTEGRITY.test(token)) return true;
+  return line.slice(Math.max(0, index - 8), index).endsWith("base64,");
+}
+
 // Candidate tokens: runs of base64/hex characters between quotes, spaces, = or :.
-const CANDIDATE = /(?<=["'`=:\s(,]|^)([A-Za-z0-9+/_=-]{20,})(?=["'`\s),;]|$)/g;
+const CANDIDATE = /(?<=["'`=:\s(,]|^)([A-Za-z0-9+/_-]{20,}={0,2})(?=["'`\s),;]|$)/g;
 
 /** Yield {token, index} for every high-entropy token on a line. */
 export function* findHighEntropyStrings(line, limits = DEFAULT_LIMITS) {
   for (const match of line.matchAll(CANDIDATE)) {
-    if (isHighEntropy(match[1], limits)) yield { token: match[1], index: match.index };
+    if (isHighEntropy(match[1], limits) && !isKnownNonSecret(match[1], line, match.index)) {
+      yield { token: match[1], index: match.index };
+    }
   }
 }
