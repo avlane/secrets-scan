@@ -35,3 +35,13 @@ and a whole file with `secrets-scan:ignore-file` anywhere in it.
 
 `secrets-scan --git` scans exactly the files `git ls-files` lists - no untracked build output,
 no ignored files - which is usually what a CI job wants.
+## Baselines
+
+To adopt secrets-scan on a project that already contains findings, record them once and fail
+only on new ones:
+
+    secrets-scan --write-baseline .secrets-baseline.json
+    secrets-scan --baseline .secrets-baseline.json
+
+The baseline stores hashes (rule + path + secret), never the secrets, and survives line
+number changes.

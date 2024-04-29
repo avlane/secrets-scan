@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { DEFAULT_ALLOWLIST_NAME, EMPTY_ALLOWLIST, isAllowed, loadAllowlist } from "./allowlist.js";
+import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
 import { GitError, listTrackedFiles } from "./git.js";
 import { createMatcher } from "./glob.js";
 import { formatJson, formatSummary, formatText, useColor } from "./report.js";
@@ -31,6 +32,8 @@ Options:
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
       --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
+      --baseline FILE  ignore the findings recorded in FILE; only new ones are reported
+      --write-baseline FILE  record the current findings in FILE and exit 0
       --color MODE  color the text report: auto (default), always or never
   -q, --quiet       do not print the summary line on stderr
 
@@ -48,6 +51,8 @@ const OPTIONS = {
   include: { type: "string", multiple: true },
   exclude: { type: "string", multiple: true },
   allowlist: { type: "string" },
+  baseline: { type: "string" },
+  "write-baseline": { type: "string" },
   color: { type: "string", default: "auto" },
   quiet: { type: "boolean", short: "q" },
 };
@@ -59,7 +64,7 @@ class UsageError extends Error {}
  * The files to scan for one PATH argument, as [{relative, read()}].
  * `relative` is relative to the scanned directory and uses "/" separators.
  */
-function sourcesFor(absoluteRoot, { git, include, exclude }) {
+function sourcesFor(absoluteRoot, { git, include, exclude, skip }) {
   const stat = fs.statSync(absoluteRoot);
   if (!stat.isDirectory()) {
     return [{ relative: path.basename(absoluteRoot), read: () => fs.readFileSync(absoluteRoot) }];
@@ -76,6 +81,7 @@ function sourcesFor(absoluteRoot, { git, include, exclude }) {
   }
   return relatives
     .filter((relative) => !hasBinaryExtension(relative))
+    .filter((relative) => !skip.has(path.join(absoluteRoot, ...relative.split("/"))))
     .map((relative) => ({ relative, read: () => fs.readFileSync(path.join(absoluteRoot, ...relative.split("/"))) }));
 }
 
@@ -131,6 +137,8 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   const context = {
     git: values.git,
     include: createMatcher(values.include ?? []),
+    // A baseline file is full of hashes: never scan the one we are reading or writing.
+    skip: new Set([values.baseline, values["write-baseline"]].filter(Boolean).map((file) => path.resolve(cwd, file))),
     exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
   const scanOptions = { entropy: !values["no-entropy"] };
@@ -153,12 +161,30 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   }
   findings = findings.filter((f) => !isAllowed(f, allowlist));
 
+  if (values["write-baseline"]) {
+    writeBaseline(path.resolve(cwd, values["write-baseline"]), findings);
+    stderr.write(`secrets-scan: wrote ${findings.length} finding${findings.length === 1 ? "" : "s"} to ${values["write-baseline"]}\n`);
+    return EXIT_CLEAN;
+  }
+  let baselined = 0;
+  if (values.baseline) {
+    let baseline;
+    try {
+      baseline = readBaseline(path.resolve(cwd, values.baseline));
+    } catch (error) {
+      throw new UsageError(error.message);
+    }
+    const split = applyBaseline(findings, baseline);
+    findings = split.fresh;
+    baselined = split.known.length;
+  }
+
   const options = {
     showSecrets: values["show-secrets"],
     version: pkg.version,
     color: useColor(values.color, stdout, env),
   };
   stdout.write(values.format === "json" ? formatJson(findings, options) : formatText(findings, options));
-  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned));
+  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

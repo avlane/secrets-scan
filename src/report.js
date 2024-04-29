@@ -63,12 +63,16 @@ export function formatText(findings, { showSecrets = false, color = false } = {}
 }
 
 /** One line for stderr: how much was scanned and what was found. */
-export function formatSummary(findings, filesScanned) {
+export function formatSummary(findings, filesScanned, { baselined = 0 } = {}) {
   const files = `${filesScanned} file${filesScanned === 1 ? "" : "s"}`;
-  if (findings.length === 0) return `secrets-scan: no secrets found (scanned ${files})\n`;
+  const known = baselined > 0 ? `; ${baselined} known in the baseline ignored` : "";
+  if (findings.length === 0) {
+    const none = baselined > 0 ? "no new secrets found" : "no secrets found";
+    return `secrets-scan: ${none} (scanned ${files}${known})\n`;
+  }
   const { bySeverity } = summarize(findings);
   const parts = ["high", "medium", "low"].filter((s) => bySeverity[s] > 0).map((s) => `${bySeverity[s]} ${s}`);
   const filesWithFindings = new Set(findings.map((f) => f.path)).size;
   const noun = findings.length === 1 ? "potential secret" : "potential secrets";
-  return `secrets-scan: ${findings.length} ${noun} in ${filesWithFindings} file${filesWithFindings === 1 ? "" : "s"} (${parts.join(", ")}); scanned ${files}\n`;
+  return `secrets-scan: ${findings.length} ${noun} in ${filesWithFindings} file${filesWithFindings === 1 ? "" : "s"} (${parts.join(", ")}); scanned ${files}${known}\n`;
 }

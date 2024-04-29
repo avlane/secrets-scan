@@ -15,7 +15,7 @@ const BINARY_EXTENSIONS = new Set([
 export const DEFAULT_SKIPPED_FILES = [
   "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
   "Cargo.lock", "poetry.lock", "Pipfile.lock", "composer.lock", "Gemfile.lock", "go.sum",
-  "*.min.js", "*.min.css", "*.map",
+  "*.min.js", "*.min.css", "*.map", ".secrets-baseline.json",
 ];
 
 export function hasBinaryExtension(file) {
