@@ -6,8 +6,8 @@ import { DEFAULT_ALLOWLIST_NAME, EMPTY_ALLOWLIST, isAllowed, loadAllowlist } fro
 import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
 import { GitError, listTrackedFiles } from "./git.js";
 import { createMatcher } from "./glob.js";
-import { formatJson, formatSummary, formatText, useColor } from "./report.js";
-import { RULES } from "./rules.js";
+import { formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
+import { RULES, ruleCatalog } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
 import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
 
@@ -28,7 +28,7 @@ Options:
       --no-default-skips  also scan lock files, *.min.js and source maps
       --no-entropy do not look for high-entropy strings, only for known patterns
       --show-secrets  print the matched text instead of masking it
-  -f, --format FMT  output format: text (default) or json
+  -f, --format FMT  output format: text (default), json or sarif
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
       --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
@@ -56,7 +56,7 @@ const OPTIONS = {
   color: { type: "string", default: "auto" },
   quiet: { type: "boolean", short: "q" },
 };
-const FORMATS = ["text", "json"];
+const FORMATS = ["text", "json", "sarif"];
 
 class UsageError extends Error {}
 
@@ -184,7 +184,9 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     version: pkg.version,
     color: useColor(values.color, stdout, env),
   };
-  stdout.write(values.format === "json" ? formatJson(findings, options) : formatText(findings, options));
+  if (values.format === "json") stdout.write(formatJson(findings, options));
+  else if (values.format === "sarif") stdout.write(formatSarif(findings, { ...options, catalog: ruleCatalog() }));
+  else stdout.write(formatText(findings, options));
   if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

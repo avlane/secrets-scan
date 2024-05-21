@@ -51,6 +51,51 @@ export function useColor(mode, stream, env) {
   return Boolean(stream.isTTY);
 }
 
+const SARIF_LEVEL = { high: "error", medium: "warning", low: "note" };
+const SARIF_SEVERITY = { high: "8.0", medium: "5.0", low: "3.0" };
+
+/**
+ * SARIF 2.1.0, the format GitHub code scanning and most IDE viewers understand.
+ * Messages never contain the secret; the fingerprint lets viewers track a finding
+ * across commits.
+ */
+export function formatSarif(findings, { version = "0.0.0", catalog = [] } = {}) {
+  const indexOf = new Map(catalog.map((rule, index) => [rule.id, index]));
+  const document = {
+    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+    version: "2.1.0",
+    runs: [{
+      tool: {
+        driver: {
+          name: "secrets-scan",
+          version,
+          rules: catalog.map((rule) => ({
+            id: rule.id,
+            name: rule.id,
+            shortDescription: { text: rule.description },
+            defaultConfiguration: { level: SARIF_LEVEL[rule.severity] },
+            properties: { "security-severity": SARIF_SEVERITY[rule.severity] },
+          })),
+        },
+      },
+      results: findings.map((f) => ({
+        ruleId: f.ruleId,
+        ...(indexOf.has(f.ruleId) ? { ruleIndex: indexOf.get(f.ruleId) } : {}),
+        level: SARIF_LEVEL[f.severity],
+        message: { text: `${f.message} found in ${f.path}` },
+        locations: [{
+          physicalLocation: {
+            artifactLocation: { uri: f.path, uriBaseId: "%SRCROOT%" },
+            region: { startLine: f.line, startColumn: f.column, endColumn: f.endColumn },
+          },
+        }],
+        partialFingerprints: { "secretsScan/v1": f.fingerprint },
+      })),
+    }],
+  };
+  return JSON.stringify(document, null, 2) + "\n";
+}
+
 export function formatText(findings, { showSecrets = false, color = false } = {}) {
   if (findings.length === 0) return "";
   return findings

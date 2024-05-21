@@ -2,9 +2,10 @@ import fs from "node:fs";
 
 import { findHighEntropyStrings } from "./entropy.js";
 import { fingerprint } from "./fingerprint.js";
+import { ENTROPY_RULE } from "./rules.js";
 import { looksBinary } from "./walk.js";
 
-const ENTROPY_RULE_ID = "high-entropy-string";
+const ENTROPY_RULE_ID = ENTROPY_RULE.id;
 
 // Comments that silence findings. Put them in whatever comment syntax the file uses:
 //   const key = "..."; // secrets-scan:ignore
@@ -66,8 +67,8 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
         if (lineFindings.some((f) => overlaps(f, column, endColumn))) continue;
         lineFindings.push({
           ruleId: ENTROPY_RULE_ID,
-          severity: "medium",
-          message: "High-entropy string",
+          severity: ENTROPY_RULE.severity,
+          message: ENTROPY_RULE.description,
           path: filePath,
           line: index + 1,
           column,

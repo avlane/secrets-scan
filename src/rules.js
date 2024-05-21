@@ -66,3 +66,13 @@ export const RULES = [
     validate: (value) => !looksLikePlaceholder(value),
   },
 ];
+export const ENTROPY_RULE = {
+  id: "high-entropy-string",
+  description: "High-entropy string",
+  severity: "medium",
+};
+
+/** Every rule that can produce a finding, for reports that describe them (SARIF). */
+export function ruleCatalog() {
+  return [...RULES, ENTROPY_RULE].map(({ id, description, severity }) => ({ id, description, severity }));
+}

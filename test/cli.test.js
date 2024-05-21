@@ -86,6 +86,17 @@ describe("cli", () => {
     assert.equal(JSON.parse(stdout).summary.total, 0);
   });
 
+  it("prints SARIF with --format sarif", async () => {
+    const { code, stdout } = await run({ "src/k.env": `KEY=${AWS_KEY}\n` }, ["--format", "sarif"]);
+    assert.equal(code, 1);
+    const doc = JSON.parse(stdout);
+    const [result] = doc.runs[0].results;
+    assert.equal(result.ruleId, "aws-access-key-id");
+    assert.equal(result.locations[0].physicalLocation.artifactLocation.uri, "src/k.env");
+    assert.ok(doc.runs[0].tool.driver.rules.some((rule) => rule.id === "high-entropy-string"));
+    assert.ok(!stdout.includes(AWS_KEY));
+  });
+
   it("rejects unknown formats", async () => {
     const { code, stderr } = await run({}, ["--format", "xml"]);
     assert.equal(code, 2);

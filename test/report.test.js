@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { display, formatJson, formatSummary, formatText, redact, summarize, useColor } from "../src/report.js";
+import { display, formatJson, formatSarif, formatSummary, formatText, redact, summarize, useColor } from "../src/report.js";
 
 describe("redact", () => {
   it("masks short secrets completely", () => {
@@ -47,6 +47,47 @@ describe("formatJson", () => {
   it("is valid for no findings", () => {
     assert.deepEqual(JSON.parse(formatJson([])).findings, []);
     assert.equal(summarize([]).total, 0);
+  });
+});
+
+describe("formatSarif", () => {
+  const catalog = [
+    { id: "aws-access-key-id", description: "AWS access key ID", severity: "high" },
+    { id: "high-entropy-string", description: "High-entropy string", severity: "medium" },
+  ];
+  const finding = {
+    path: "config/a.env", line: 4, column: 7, endColumn: 27, ruleId: "high-entropy-string",
+    severity: "medium", message: "High-entropy string", secret: "THE-SECRET-VALUE", fingerprint: "ab".repeat(16),
+  };
+
+  it("produces a SARIF 2.1.0 run with rules and results", () => {
+    const doc = JSON.parse(formatSarif([finding], { version: "1.2.3", catalog }));
+    assert.equal(doc.version, "2.1.0");
+    assert.match(doc.$schema, /sarif-2\.1\.0/);
+    const [run] = doc.runs;
+    assert.equal(run.tool.driver.name, "secrets-scan");
+    assert.equal(run.tool.driver.version, "1.2.3");
+    assert.deepEqual(run.tool.driver.rules.map((r) => r.id), ["aws-access-key-id", "high-entropy-string"]);
+    assert.equal(run.tool.driver.rules[0].defaultConfiguration.level, "error");
+    assert.equal(run.tool.driver.rules[1].defaultConfiguration.level, "warning");
+    const [result] = run.results;
+    assert.equal(result.ruleId, "high-entropy-string");
+    assert.equal(result.ruleIndex, 1);
+    assert.equal(result.level, "warning");
+    assert.deepEqual(result.locations[0].physicalLocation, {
+      artifactLocation: { uri: "config/a.env", uriBaseId: "%SRCROOT%" },
+      region: { startLine: 4, startColumn: 7, endColumn: 27 },
+    });
+    assert.deepEqual(result.partialFingerprints, { "secretsScan/v1": "ab".repeat(16) });
+  });
+
+  it("never contains the secret", () => {
+    assert.ok(!formatSarif([finding], { catalog }).includes("THE-SECRET-VALUE"));
+  });
+
+  it("is a valid document without results", () => {
+    const doc = JSON.parse(formatSarif([], { catalog }));
+    assert.deepEqual(doc.runs[0].results, []);
   });
 });
 

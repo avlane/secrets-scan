@@ -45,3 +45,11 @@ only on new ones:
 
 The baseline stores hashes (rule + path + secret), never the secrets, and survives line
 number changes.
+## Output formats
+
+`--format text` (default), `--format json`, and `--format sarif` for GitHub code scanning
+and IDE viewers:
+
+    secrets-scan --format sarif > results.sarif
+
+Secrets are masked in every format unless you pass `--show-secrets`; SARIF never contains them.
