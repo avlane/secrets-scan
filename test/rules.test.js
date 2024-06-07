@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 
 import { RULES, looksLikePlaceholder } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
-import { AWS_KEY, GITHUB_TOKEN, PRIVATE_KEY_HEADER, SLACK_TOKEN, SLACK_WEBHOOK } from "./fakes.js";
+import {
+  AWS_KEY, GITHUB_TOKEN, GOOGLE_API_KEY, MAILGUN_KEY, NPM_TOKEN, PRIVATE_KEY_HEADER, SENDGRID_KEY,
+  SLACK_TOKEN, SLACK_WEBHOOK, STRIPE_KEY, STRIPE_WEBHOOK, TWILIO_KEY,
+} from "./fakes.js";
 
 const scan = (text) => scanText(text, "file.txt", RULES);
 
@@ -51,6 +54,40 @@ describe("scanText", () => {
   it("finds Slack tokens and webhooks", () => {
     assert.equal(scan(`SLACK_BOT=${SLACK_TOKEN}`)[0]?.ruleId, "slack-token");
     assert.equal(scan(`hook: "${SLACK_WEBHOOK}"`)[0]?.ruleId, "slack-webhook");
+  });
+
+  it("finds the keys of common providers", () => {
+    const cases = {
+      "stripe-key": STRIPE_KEY,
+      "stripe-webhook-secret": STRIPE_WEBHOOK,
+      "google-api-key": GOOGLE_API_KEY,
+      "npm-token": NPM_TOKEN,
+      "sendgrid-key": SENDGRID_KEY,
+      "twilio-api-key": TWILIO_KEY,
+      "mailgun-key": MAILGUN_KEY,
+    };
+    for (const [ruleId, secret] of Object.entries(cases)) {
+      for (const line of [`x = "${secret}"`, `X=${secret}`, secret]) {
+        const found = scan(line);
+        assert.equal(found.length, 1, `${ruleId}: ${line}`);
+        assert.equal(found[0].ruleId, ruleId);
+        assert.equal(found[0].secret, secret);
+      }
+    }
+  });
+
+  it("does not take test keys or near misses for live keys", () => {
+    const rulesOnly = (text) => scanText(text, "file.txt", RULES, { entropy: false });
+    assert.deepEqual(rulesOnly("sk_test_" + "0123456789abcdefghijklmn"), []);
+    assert.deepEqual(rulesOnly(STRIPE_KEY.slice(0, -8)), []);
+    assert.deepEqual(rulesOnly(NPM_TOKEN.slice(0, -1)), []);
+    assert.deepEqual(rulesOnly(TWILIO_KEY.toUpperCase()), []);
+    assert.deepEqual(rulesOnly("task-key-" + "0123456789abcdef"), []);
+  });
+
+  it("finds Google Cloud service account key files", () => {
+    assert.equal(scan('  "type": "service_account",')[0]?.ruleId, "gcp-service-account");
+    assert.deepEqual(scan('  "type": "authorized_user",'), []);
   });
 
   it("finds hard-coded credentials in assignments", () => {
