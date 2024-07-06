@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 
 import { DEFAULT_ALLOWLIST_NAME, EMPTY_ALLOWLIST, isAllowed, loadAllowlist } from "./allowlist.js";
 import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
-import { GitError, listTrackedFiles } from "./git.js";
+import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
 import { createMatcher } from "./glob.js";
 import { formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
 import { RULES, ruleCatalog } from "./rules.js";
@@ -25,6 +25,7 @@ Options:
   -h, --help       show this help
   -v, --version    show the version
       --git        scan only the files git tracks (instead of walking the directory)
+      --staged     scan the content staged in git's index (for a pre-commit hook)
       --no-default-skips  also scan lock files, *.min.js and source maps
       --no-entropy do not look for high-entropy strings, only for known patterns
       --show-secrets  print the matched text instead of masking it
@@ -44,6 +45,7 @@ const OPTIONS = {
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
   git: { type: "boolean" },
+  staged: { type: "boolean" },
   "no-default-skips": { type: "boolean" },
   "no-entropy": { type: "boolean" },
   "show-secrets": { type: "boolean" },
@@ -64,13 +66,18 @@ class UsageError extends Error {}
  * The files to scan for one PATH argument, as [{relative, read()}].
  * `relative` is relative to the scanned directory and uses "/" separators.
  */
-function sourcesFor(absoluteRoot, { git, include, exclude, skip }) {
+function sourcesFor(absoluteRoot, { git, staged, include, exclude, skip }) {
   const stat = fs.statSync(absoluteRoot);
   if (!stat.isDirectory()) {
     return [{ relative: path.basename(absoluteRoot), read: () => fs.readFileSync(absoluteRoot) }];
   }
   let relatives;
-  if (git) {
+  if (staged) {
+    relatives = listStagedFiles(absoluteRoot).filter((relative) => {
+      if (exclude.matches(relative)) return false;
+      return include.size === 0 || include.matches(relative);
+    });
+  } else if (git) {
     relatives = listTrackedFiles(absoluteRoot).filter((relative) => {
       if (exclude.matches(relative)) return false;
       return include.size === 0 || include.matches(relative);
@@ -82,7 +89,12 @@ function sourcesFor(absoluteRoot, { git, include, exclude, skip }) {
   return relatives
     .filter((relative) => !hasBinaryExtension(relative))
     .filter((relative) => !skip.has(path.join(absoluteRoot, ...relative.split("/"))))
-    .map((relative) => ({ relative, read: () => fs.readFileSync(path.join(absoluteRoot, ...relative.split("/"))) }));
+    .map((relative) => ({
+      relative,
+      read: staged
+        ? () => readStagedFile(absoluteRoot, relative)
+        : () => fs.readFileSync(path.join(absoluteRoot, ...relative.split("/"))),
+    }));
 }
 
 export async function main(argv, io = {}) {
@@ -134,8 +146,10 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     }
   }
 
+  if (values.git && values.staged) throw new UsageError("--git and --staged cannot be combined");
   const context = {
     git: values.git,
+    staged: values.staged,
     include: createMatcher(values.include ?? []),
     // A baseline file is full of hashes: never scan the one we are reading or writing.
     skip: new Set([values.baseline, values["write-baseline"]].filter(Boolean).map((file) => path.resolve(cwd, file))),

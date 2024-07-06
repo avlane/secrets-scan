@@ -53,3 +53,10 @@ and IDE viewers:
     secrets-scan --format sarif > results.sarif
 
 Secrets are masked in every format unless you pass `--show-secrets`; SARIF never contains them.
+## Pre-commit
+
+`secrets-scan --staged` scans the content staged in git's index (not the working tree), which
+is what a pre-commit hook needs:
+
+    #!/bin/sh
+    exec npx secrets-scan --staged

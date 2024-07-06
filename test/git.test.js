@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
 import { main } from "../src/cli.js";
-import { GitError, listTrackedFiles } from "../src/git.js";
+import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "../src/git.js";
 import { AWS_KEY } from "./fakes.js";
 import { capture, makeTree } from "./helpers.js";
 
@@ -38,6 +38,13 @@ describe("git mode", { skip: !haveGit && "git is not installed" }, () => {
   it("handles file names with spaces and non-ASCII characters", () => {
     const dir = repo({ "my file.txt": "1", "café/ü.txt": "2" }, ["my file.txt", "café/ü.txt"]);
     assert.deepEqual(listTrackedFiles(dir).sort(), ["café/ü.txt", "my file.txt"]);
+  });
+
+  it("lists staged files and reads their staged content", () => {
+    const dir = repo({ "a.txt": "staged version\n", "b.txt": "unstaged\n" }, ["a.txt"]);
+    fs.writeFileSync(path.join(dir, "a.txt"), "edited later\n");
+    assert.deepEqual(listStagedFiles(dir), ["a.txt"]);
+    assert.equal(readStagedFile(dir, "a.txt").toString(), "staged version\n");
   });
 
   it("throws a GitError outside a repository", () => {
@@ -79,6 +86,38 @@ describe("git mode", { skip: !haveGit && "git is not installed" }, () => {
     const { io, out } = capture();
     assert.equal(await main(["--git"], { ...io, cwd: dir }), 0);
     assert.match(out.stderr, /scanned 1 file\)\n/);
+  });
+
+  it("--staged scans what is in the index, not the working tree", async () => {
+    const dir = repo({ "new.env": `K=${AWS_KEY}\n`, "clean.txt": "fine\n", "other.env": "FINE=1\n" }, ["new.env", "clean.txt"]);
+    // After staging: the secret is removed from the working copy, and a secret is added to an unstaged file.
+    fs.writeFileSync(path.join(dir, "new.env"), "K=removed-after-staging\n");
+    fs.writeFileSync(path.join(dir, "other.env"), `K=${AWS_KEY}\n`);
+    const { io, out } = capture();
+    const code = await main(["--staged"], { ...io, cwd: dir });
+    assert.equal(code, 1);
+    assert.deepEqual(out.stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["new.env:1:3"]);
+    assert.match(out.stderr, /scanned 2 files/);
+  });
+
+  it("--staged with nothing staged scans nothing", async () => {
+    const dir = repo({ "a.env": `K=${AWS_KEY}\n` }, []);
+    const { io, out } = capture();
+    assert.equal(await main(["--staged"], { ...io, cwd: dir }), 0);
+    assert.match(out.stderr, /scanned 0 files/);
+  });
+
+  it("--staged works from a subdirectory", async () => {
+    const dir = repo({ "pkg/a.env": `K=${AWS_KEY}\n`, "top.env": `K=${AWS_KEY}\n` }, ["pkg/a.env", "top.env"]);
+    const { io, out } = capture();
+    await main(["--staged"], { ...io, cwd: path.join(dir, "pkg") });
+    assert.deepEqual(out.stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["a.env:1:3"]);
+  });
+
+  it("--git and --staged cannot be combined", async () => {
+    const { io, out } = capture();
+    assert.equal(await main(["--git", "--staged"], { ...io, cwd: process.cwd() }), 2);
+    assert.match(out.stderr, /cannot be combined/);
   });
 
   it("--git outside a repository is an error", async () => {

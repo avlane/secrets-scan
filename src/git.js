@@ -20,6 +20,16 @@ function splitNul(buffer) {
   return buffer.toString("utf8").split("\0").filter((name) => name !== "");
 }
 
+/** Files added, copied, modified or renamed in the index, relative to `cwd`. */
+export function listStagedFiles(cwd) {
+  return splitNul(git(cwd, ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "--relative", "-z"]));
+}
+
+/** The content of a file as staged, which may differ from the working tree. */
+export function readStagedFile(cwd, relative) {
+  return git(cwd, ["show", `:./${relative}`]);
+}
+
 /** Paths (relative to `cwd`, with "/" separators) of the files git tracks below `cwd`. */
 export function listTrackedFiles(cwd) {
   return splitNul(git(cwd, ["ls-files", "-z"]));
