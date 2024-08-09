@@ -15,6 +15,18 @@ const IGNORE_LINE = "secrets-scan:ignore";
 const IGNORE_NEXT_LINE = "secrets-scan:ignore-next-line";
 const IGNORE_FILE = "secrets-scan:ignore-file";
 
+const globalPatterns = new WeakMap();
+
+/** The rule's pattern with the g flag, so that every match on a line is found, not just the first. */
+function globalPattern(rule) {
+  let pattern = globalPatterns.get(rule);
+  if (!pattern) {
+    pattern = rule.pattern.global ? rule.pattern : new RegExp(rule.pattern.source, `${rule.pattern.flags}g`);
+    globalPatterns.set(rule, pattern);
+  }
+  return pattern;
+}
+
 function overlaps(finding, column, endColumn) {
   return finding.column < endColumn && column < finding.endColumn;
 }
@@ -40,24 +52,24 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
     if (line.includes(IGNORE_LINE)) return;
     const lineFindings = [];
     for (const rule of rules) {
-      const match = rule.pattern.exec(line);
-      if (!match) continue;
-      const secret = match[rule.group ?? 0];
-      if (rule.validate && !rule.validate(secret, line)) continue;
-      const column = match.index + match[0].indexOf(secret) + 1;
-      // Rules are ordered from specific to generic: the first one to explain some text wins.
-      if (lineFindings.some((f) => overlaps(f, column, column + secret.length))) continue;
-      lineFindings.push({
-        ruleId: rule.id,
-        severity: rule.severity,
-        message: rule.description,
-        path: filePath,
-        line: index + 1,
-        column,
-        endColumn: column + secret.length,
-        secret,
-        fingerprint: fingerprint(rule.id, filePath, secret),
-      });
+      for (const match of line.matchAll(globalPattern(rule))) {
+        const secret = match[rule.group ?? 0];
+        if (rule.validate && !rule.validate(secret, line)) continue;
+        const column = match.index + match[0].indexOf(secret) + 1;
+        // Rules are ordered from specific to generic: the first one to explain some text wins.
+        if (lineFindings.some((f) => overlaps(f, column, column + secret.length))) continue;
+        lineFindings.push({
+          ruleId: rule.id,
+          severity: rule.severity,
+          message: rule.description,
+          path: filePath,
+          line: index + 1,
+          column,
+          endColumn: column + secret.length,
+          secret,
+          fingerprint: fingerprint(rule.id, filePath, secret),
+        });
+      }
     }
     if (entropy) {
       for (const { token, index: offset } of findHighEntropyStrings(line)) {

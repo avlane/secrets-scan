@@ -131,6 +131,21 @@ describe("scanText", () => {
     assert.equal(scan('password: "Valid_Looking-Pass9"').length, 1);
   });
 
+  it("reports every secret on a line, not just the first", () => {
+    const line = `{"a": "${AWS_KEY}", "b": "${GITHUB_TOKEN}", "c": "${AWS_KEY}"}`;
+    const found = scan(line);
+    assert.deepEqual(found.map((f) => f.ruleId), ["aws-access-key-id", "aws-access-key-id", "github-token"].sort((a, b) => 0));
+    assert.deepEqual(found.map((f) => f.column).sort((a, b) => a - b), [
+      line.indexOf(AWS_KEY) + 1, line.indexOf(GITHUB_TOKEN) + 1, line.lastIndexOf(AWS_KEY) + 1,
+    ]);
+    assert.equal(new Set(found.map((f) => f.column)).size, 3);
+  });
+
+  it("finds several generic assignments on one line", () => {
+    const found = scan('{"password": "aB3dE6gH9jK", "api_key": "zY8wV5tS2qP"}');
+    assert.deepEqual(found.map((f) => f.secret), ["aB3dE6gH9jK", "zY8wV5tS2qP"]);
+  });
+
   it("reports text once even when several rules match it", () => {
     const found = scan(`"token": "${GITHUB_TOKEN}"`);
     assert.deepEqual(found.map((f) => f.ruleId), ["github-token"]);
