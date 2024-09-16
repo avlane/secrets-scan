@@ -22,6 +22,8 @@ export function looksLikePlaceholder(value) {
   return false;
 }
 
+export const SEVERITIES = ["low", "medium", "high"];
+
 export const RULES = [
   {
     id: "aws-access-key-id",

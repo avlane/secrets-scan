@@ -149,6 +149,17 @@ describe("cli", () => {
     assert.equal(forced.stdout.trim().split("\n").length, 3);
   });
 
+  it("--min-severity hides lower severities", async () => {
+    const files = { "a.env": `K=${AWS_KEY}\n`, "b.yml": 'password: "aB3dE6gH9jK"\n' };
+    const all = await run(files);
+    assert.equal(all.stdout.trim().split("\n").length, 2);
+    const high = await run(files, ["--min-severity", "high"]);
+    assert.deepEqual(high.stdout.trim().split("\n").map((l) => l.split("  ")[1]), ["aws-access-key-id"]);
+    const onlyMedium = await run({ "b.yml": 'password: "aB3dE6gH9jK"\n' }, ["--min-severity", "high"]);
+    assert.equal(onlyMedium.code, 0);
+    assert.equal((await run(files, ["--min-severity", "critical"])).code, 2);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

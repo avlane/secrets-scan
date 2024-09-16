@@ -7,7 +7,7 @@ import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
 import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
 import { createMatcher } from "./glob.js";
 import { formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
-import { RULES, ruleCatalog } from "./rules.js";
+import { RULES, SEVERITIES, ruleCatalog } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
 import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
 
@@ -33,6 +33,7 @@ Options:
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
       --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
+      --min-severity LEVEL  report only findings of this severity or higher: low (default), medium, high
       --baseline FILE  ignore the findings recorded in FILE; only new ones are reported
       --write-baseline FILE  record the current findings in FILE and exit 0
       --color MODE  color the text report: auto (default), always or never
@@ -53,6 +54,7 @@ const OPTIONS = {
   include: { type: "string", multiple: true },
   exclude: { type: "string", multiple: true },
   allowlist: { type: "string" },
+  "min-severity": { type: "string", default: "low" },
   baseline: { type: "string" },
   "write-baseline": { type: "string" },
   color: { type: "string", default: "auto" },
@@ -136,6 +138,9 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   if (!["auto", "always", "never"].includes(values.color)) {
     throw new UsageError(`unknown color mode '${values.color}' (use auto, always or never)`);
   }
+  if (!SEVERITIES.includes(values["min-severity"])) {
+    throw new UsageError(`unknown severity '${values["min-severity"]}' (use ${SEVERITIES.join(", ")})`);
+  }
   let allowlist = EMPTY_ALLOWLIST;
   const allowlistFile = path.resolve(cwd, values.allowlist ?? DEFAULT_ALLOWLIST_NAME);
   if (values.allowlist || fs.existsSync(allowlistFile)) {
@@ -173,7 +178,8 @@ async function run(argv, { stdout, stderr, cwd, env }) {
       findings.push(...scanBuffer(buffer, source.relative, RULES, scanOptions));
     }
   }
-  findings = findings.filter((f) => !isAllowed(f, allowlist));
+  const minimum = SEVERITIES.indexOf(values["min-severity"]);
+  findings = findings.filter((f) => !isAllowed(f, allowlist) && SEVERITIES.indexOf(f.severity) >= minimum);
 
   if (values["write-baseline"]) {
     writeBaseline(path.resolve(cwd, values["write-baseline"]), findings);
