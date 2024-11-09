@@ -32,10 +32,13 @@ function overlaps(finding, column, endColumn) {
 }
 
 /**
- * Scan text and return the findings, one per matching line and rule.
- * Positions are 1-based.
+ * Scan text and return the findings, one per match. Positions are 1-based.
+ * On lines longer than `maxLineLength` only the cheap, specific rules run: the
+ * entropy detector and the generic assignment rule are too noisy and too slow there.
  */
-export function scanText(text, filePath, rules, { entropy = true } = {}) {
+export const DEFAULT_MAX_LINE_LENGTH = 10000;
+
+export function scanText(text, filePath, rules, { entropy = true, maxLineLength = DEFAULT_MAX_LINE_LENGTH } = {}) {
   const findings = [];
   if (text.includes(IGNORE_FILE)) return findings;
   const lines = text.split(/\r\n|\n|\r/);
@@ -51,7 +54,9 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
     }
     if (line.includes(IGNORE_LINE)) return;
     const lineFindings = [];
+    const tooLong = line.length > maxLineLength;
     for (const rule of rules) {
+      if (tooLong && rule.slow) continue;
       for (const match of line.matchAll(globalPattern(rule))) {
         const secret = match[rule.group ?? 0];
         if (rule.validate && !rule.validate(secret, line)) continue;
@@ -71,7 +76,7 @@ export function scanText(text, filePath, rules, { entropy = true } = {}) {
         });
       }
     }
-    if (entropy) {
+    if (entropy && !tooLong) {
       for (const { token, index: offset } of findHighEntropyStrings(line)) {
         const column = offset + 1;
         const endColumn = column + token.length;

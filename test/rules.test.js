@@ -146,6 +146,14 @@ describe("scanText", () => {
     assert.deepEqual(found.map((f) => f.secret), ["aB3dE6gH9jK", "zY8wV5tS2qP"]);
   });
 
+  it("runs only the specific rules on very long lines", () => {
+    const filler = "x ".repeat(6000);
+    const line = `${filler} password = "aB3dE6gH9jK" ${AWS_KEY}`;
+    assert.deepEqual(scanText(line, "bundle.js", RULES, { maxLineLength: 100 }).map((f) => f.ruleId), ["aws-access-key-id"]);
+    assert.deepEqual(scanText(line, "bundle.js", RULES, { maxLineLength: 100000 }).map((f) => f.ruleId).sort(),
+      ["aws-access-key-id", "generic-secret-assignment"]);
+  });
+
   it("reports text once even when several rules match it", () => {
     const found = scan(`"token": "${GITHUB_TOKEN}"`);
     assert.deepEqual(found.map((f) => f.ruleId), ["github-token"]);

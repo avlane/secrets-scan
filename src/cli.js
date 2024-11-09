@@ -9,6 +9,7 @@ import { createMatcher } from "./glob.js";
 import { formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
 import { RULES, SEVERITIES, ruleCatalog } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
+import { parseSize } from "./size.js";
 import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
 
 const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -33,6 +34,8 @@ Options:
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
       --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
+      --max-size SIZE  skip files larger than SIZE, e.g. 500k or 2M (default: 1M)
+      --max-line-length N  on lines longer than N characters only run the specific rules (default: 10000)
       --min-severity LEVEL  report only findings of this severity or higher: low (default), medium, high
       --baseline FILE  ignore the findings recorded in FILE; only new ones are reported
       --write-baseline FILE  record the current findings in FILE and exit 0
@@ -55,6 +58,8 @@ const OPTIONS = {
   exclude: { type: "string", multiple: true },
   allowlist: { type: "string" },
   "min-severity": { type: "string", default: "low" },
+  "max-size": { type: "string", default: "1M" },
+  "max-line-length": { type: "string", default: "10000" },
   baseline: { type: "string" },
   "write-baseline": { type: "string" },
   color: { type: "string", default: "auto" },
@@ -141,6 +146,14 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   if (!SEVERITIES.includes(values["min-severity"])) {
     throw new UsageError(`unknown severity '${values["min-severity"]}' (use ${SEVERITIES.join(", ")})`);
   }
+  let maxSize;
+  let maxLineLength;
+  try {
+    maxSize = parseSize(values["max-size"]);
+    maxLineLength = parseSize(values["max-line-length"]);
+  } catch (error) {
+    throw new UsageError(error.message);
+  }
   let allowlist = EMPTY_ALLOWLIST;
   const allowlistFile = path.resolve(cwd, values.allowlist ?? DEFAULT_ALLOWLIST_NAME);
   if (values.allowlist || fs.existsSync(allowlistFile)) {
@@ -160,10 +173,11 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     skip: new Set([values.baseline, values["write-baseline"]].filter(Boolean).map((file) => path.resolve(cwd, file))),
     exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
-  const scanOptions = { entropy: !values["no-entropy"] };
+  const scanOptions = { entropy: !values["no-entropy"], maxLineLength };
   const roots = positionals.length > 0 ? positionals : ["."];
   let findings = [];
   let filesScanned = 0;
+  let skippedLarge = 0;
   for (const root of roots) {
     const absoluteRoot = path.resolve(cwd, root);
     if (!fs.existsSync(absoluteRoot)) throw new UsageError(`no such file or directory: ${root}`);
@@ -173,6 +187,10 @@ async function run(argv, { stdout, stderr, cwd, env }) {
         buffer = source.read();
       } catch {
         continue; // vanished since it was listed, e.g. tracked but deleted
+      }
+      if (buffer.length > maxSize) {
+        skippedLarge += 1;
+        continue;
       }
       filesScanned += 1;
       findings.push(...scanBuffer(buffer, source.relative, RULES, scanOptions));
@@ -207,6 +225,6 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   if (values.format === "json") stdout.write(formatJson(findings, options));
   else if (values.format === "sarif") stdout.write(formatSarif(findings, { ...options, catalog: ruleCatalog() }));
   else stdout.write(formatText(findings, options));
-  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined }));
+  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

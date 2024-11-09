@@ -5,6 +5,7 @@
  * `description`, and a `pattern` that is matched against one line at a time.
  * `group` says which capture group holds the secret itself (default: the whole match).
  * An optional `validate(secret, line)` can reject a match, e.g. a placeholder value.
+ * `slow` rules are skipped on very long lines (minified code, data blobs).
  */
 const PLACEHOLDER_WORDS = [
   "example", "changeme", "change_me", "change-me", "placeholder", "your_", "your-", "dummy",
@@ -122,6 +123,7 @@ export const RULES = [
     pattern: /(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|auth[_-]?token|client[_-]?secret)["']?\s*[:=]\s*["']([^"'\s]{8,})["']/i,
     group: 1,
     validate: (value) => !looksLikePlaceholder(value),
+    slow: true,
   },
 ];
 export const ENTROPY_RULE = {

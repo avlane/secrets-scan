@@ -160,6 +160,15 @@ describe("cli", () => {
     assert.equal((await run(files, ["--min-severity", "critical"])).code, 2);
   });
 
+  it("skips files over --max-size and says so", async () => {
+    const files = { "big.env": `K=${AWS_KEY}\n` + "#".repeat(5000), "small.env": `K=${AWS_KEY}\n` };
+    const limited = await run(files, ["--max-size", "1k"]);
+    assert.deepEqual(limited.stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["small.env:1:3"]);
+    assert.match(limited.stderr, /1 larger than --max-size skipped/);
+    assert.equal((await run(files)).stdout.trim().split("\n").length, 2);
+    assert.equal((await run(files, ["--max-size", "lots"])).code, 2);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

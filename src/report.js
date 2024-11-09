@@ -108,9 +108,10 @@ export function formatText(findings, { showSecrets = false, color = false } = {}
 }
 
 /** One line for stderr: how much was scanned and what was found. */
-export function formatSummary(findings, filesScanned, { baselined = 0 } = {}) {
+export function formatSummary(findings, filesScanned, { baselined = 0, skippedLarge = 0 } = {}) {
   const files = `${filesScanned} file${filesScanned === 1 ? "" : "s"}`;
-  const known = baselined > 0 ? `; ${baselined} known in the baseline ignored` : "";
+  const known = (baselined > 0 ? `; ${baselined} known in the baseline ignored` : "")
+    + (skippedLarge > 0 ? `; ${skippedLarge} larger than --max-size skipped` : "");
   if (findings.length === 0) {
     const none = baselined > 0 ? "no new secrets found" : "no secrets found";
     return `secrets-scan: ${none} (scanned ${files}${known})\n`;
