@@ -90,6 +90,38 @@ describe("scanText", () => {
     assert.deepEqual(scan('  "type": "authorized_user",'), []);
   });
 
+  it("finds JSON web tokens whose header decodes", () => {
+    const part = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const jwt = `${part({ alg: "HS256", typ: "JWT" })}.${part({ sub: "1234567890", name: "Test User" })}.dGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZQ`;
+    const found = scan(`Authorization: Bearer ${jwt}`);
+    assert.deepEqual(found.map((f) => [f.ruleId, f.secret]), [["jwt", jwt]]);
+    const notAJwt = `${part({ foo: "bar" })}.${part({ sub: "x" })}.dGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZQ`;
+    assert.deepEqual(scan(`x = ${notAJwt}`, "file.txt").filter((f) => f.ruleId === "jwt"), []);
+  });
+
+  it("finds passwords inside URLs", () => {
+    const cases = {
+      "postgres://app:hunter22secret@db.internal:5432/app": "hunter22secret",
+      "amqps://guest-user:Zx81!kqpL@mq.example.org/vhost": "Zx81!kqpL",
+      '"https://deploy:ghx_9fK2m1Q8@git.example.com/repo.git"': "ghx_9fK2m1Q8",
+    };
+    for (const [line, password] of Object.entries(cases)) {
+      const found = scan(`url = ${line}`);
+      assert.deepEqual(found.map((f) => [f.ruleId, f.secret]), [["url-credentials", password]], line);
+    }
+  });
+
+  it("ignores URLs without credentials or with placeholder passwords", () => {
+    for (const line of [
+      "https://example.com:8443/path", "ssh://git@github.com/org/repo.git",
+      "postgres://user:password@localhost/db", "mysql://root:root@127.0.0.1/db",
+      "redis://:${REDIS_PASSWORD}@cache:6379", "https://user:<password>@host/", "http://user:%s@host/",
+      "postgres://app:changeme123@db/app", "https://user:{{ token }}@host/",
+    ]) {
+      assert.deepEqual(scanText(line, "f", RULES, { entropy: false }), [], line);
+    }
+  });
+
   it("finds hard-coded credentials in assignments", () => {
     const cases = [
       'password = "s3cr3tValue99"',

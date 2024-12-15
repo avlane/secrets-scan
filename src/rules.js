@@ -23,6 +23,9 @@ export function looksLikePlaceholder(value) {
   return false;
 }
 
+const DUMMY_PASSWORDS = new Set(["password", "pass", "passwd", "secret", "user", "admin", "root", "test", "guest", "pwd"]);
+const TEMPLATE_START = /^[$<{%]/;
+
 export const SEVERITIES = ["low", "medium", "high"];
 
 export const RULES = [
@@ -115,6 +118,30 @@ export const RULES = [
     severity: "high",
     pattern: /\b(key-[0-9a-f]{32})\b/,
     group: 1,
+  },
+  {
+    id: "jwt",
+    description: "JSON Web Token",
+    severity: "medium",
+    pattern: /\b(eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9_-])/,
+    group: 1,
+    // The header must decode to JSON with an "alg" member, which random text rarely does.
+    validate: (token) => {
+      try {
+        const header = JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString("utf8"));
+        return typeof header.alg === "string";
+      } catch {
+        return false;
+      }
+    },
+  },
+  {
+    id: "url-credentials",
+    description: "Password in a URL",
+    severity: "high",
+    pattern: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@'"]+:([^\s@/'"]{3,})@[^\s/'"]+/gi,
+    group: 1,
+    validate: (password) => !looksLikePlaceholder(password) && !TEMPLATE_START.test(password) && !DUMMY_PASSWORDS.has(password.toLowerCase()),
   },
   {
     id: "generic-secret-assignment",
