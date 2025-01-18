@@ -153,6 +153,19 @@ export const RULES = [
     slow: true,
   },
 ];
+/**
+ * The rules to run for `--only` / `--disable` (lists of rule ids), and whether the
+ * entropy detector is among them. Throws on an unknown id.
+ */
+export function selectRules({ only = [], disable = [] } = {}) {
+  const known = new Set([...RULES.map((r) => r.id), ENTROPY_RULE.id]);
+  for (const id of [...only, ...disable]) {
+    if (!known.has(id)) throw new Error(`unknown rule '${id}' (see --list-rules)`);
+  }
+  const enabled = (id) => (only.length === 0 || only.includes(id)) && !disable.includes(id);
+  return { rules: RULES.filter((rule) => enabled(rule.id)), entropy: enabled(ENTROPY_RULE.id) };
+}
+
 export const ENTROPY_RULE = {
   id: "high-entropy-string",
   description: "High-entropy string",

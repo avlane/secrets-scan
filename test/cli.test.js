@@ -169,6 +169,24 @@ describe("cli", () => {
     assert.equal((await run(files, ["--max-size", "lots"])).code, 2);
   });
 
+  it("--list-rules lists every rule with its severity", async () => {
+    const { code, stdout } = await run({}, ["--list-rules"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /^aws-access-key-id +high +AWS access key ID$/m);
+    assert.match(stdout, /^high-entropy-string +medium +High-entropy string$/m);
+  });
+
+  it("--only and --disable choose the rules", async () => {
+    const files = { "a.env": `K=${AWS_KEY}\nT=${GITHUB_TOKEN}\n` };
+    const only = await run(files, ["--only", "github-token"]);
+    assert.deepEqual(only.stdout.trim().split("\n").map((l) => l.split("  ")[1]), ["github-token"]);
+    const disabled = await run(files, ["--disable", "github-token", "--disable", "high-entropy-string"]);
+    assert.deepEqual(disabled.stdout.trim().split("\n").map((l) => l.split("  ")[1]), ["aws-access-key-id"]);
+    const bad = await run(files, ["--only", "nonsense"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /unknown rule 'nonsense'/);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

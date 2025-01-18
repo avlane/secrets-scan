@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { RULES, looksLikePlaceholder } from "../src/rules.js";
+import { RULES, ruleCatalog, looksLikePlaceholder, selectRules } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
 import {
   AWS_KEY, GITHUB_TOKEN, GOOGLE_API_KEY, MAILGUN_KEY, NPM_TOKEN, PRIVATE_KEY_HEADER, SENDGRID_KEY,
@@ -9,6 +9,44 @@ import {
 } from "./fakes.js";
 
 const scan = (text) => scanText(text, "file.txt", RULES);
+
+describe("rule catalog and selection", () => {
+  it("has unique ids, a severity and a description for every rule", () => {
+    const catalog = ruleCatalog();
+    assert.equal(new Set(catalog.map((r) => r.id)).size, catalog.length);
+    for (const rule of catalog) {
+      assert.match(rule.id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      assert.ok(["low", "medium", "high"].includes(rule.severity), rule.id);
+      assert.ok(rule.description.length > 3, rule.id);
+    }
+  });
+
+  it("runs everything by default", () => {
+    const { rules, entropy } = selectRules();
+    assert.equal(rules.length, RULES.length);
+    assert.equal(entropy, true);
+  });
+
+  it("--only keeps just the named rules, and entropy only when named", () => {
+    const wanted = ["github-token", "jwt"];
+    assert.deepEqual(selectRules({ only: wanted }).rules.map((r) => r.id), RULES.map((r) => r.id).filter((id) => wanted.includes(id)));
+    assert.equal(selectRules({ only: ["github-token"] }).entropy, false);
+    const entropyOnly = selectRules({ only: ["high-entropy-string"] });
+    assert.deepEqual([entropyOnly.rules.length, entropyOnly.entropy], [0, true]);
+  });
+
+  it("--disable removes rules", () => {
+    const { rules, entropy } = selectRules({ disable: ["generic-secret-assignment", "high-entropy-string"] });
+    assert.ok(!rules.some((r) => r.id === "generic-secret-assignment"));
+    assert.equal(rules.length, RULES.length - 1);
+    assert.equal(entropy, false);
+  });
+
+  it("rejects unknown ids", () => {
+    assert.throws(() => selectRules({ only: ["github-tokens"] }), /unknown rule 'github-tokens'/);
+    assert.throws(() => selectRules({ disable: ["nope"] }), /unknown rule 'nope'/);
+  });
+});
 
 describe("scanText", () => {
   it("finds nothing in ordinary text", () => {
@@ -166,7 +204,7 @@ describe("scanText", () => {
   it("reports every secret on a line, not just the first", () => {
     const line = `{"a": "${AWS_KEY}", "b": "${GITHUB_TOKEN}", "c": "${AWS_KEY}"}`;
     const found = scan(line);
-    assert.deepEqual(found.map((f) => f.ruleId), ["aws-access-key-id", "aws-access-key-id", "github-token"].sort((a, b) => 0));
+    assert.deepEqual(found.map((f) => f.ruleId), ["aws-access-key-id", "aws-access-key-id", "github-token"]);
     assert.deepEqual(found.map((f) => f.column).sort((a, b) => a - b), [
       line.indexOf(AWS_KEY) + 1, line.indexOf(GITHUB_TOKEN) + 1, line.lastIndexOf(AWS_KEY) + 1,
     ]);

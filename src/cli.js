@@ -7,7 +7,7 @@ import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
 import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
 import { createMatcher } from "./glob.js";
 import { formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
-import { RULES, SEVERITIES, ruleCatalog } from "./rules.js";
+import { SEVERITIES, ruleCatalog, selectRules } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
 import { parseSize } from "./size.js";
 import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
@@ -29,6 +29,8 @@ Options:
       --staged     scan the content staged in git's index (for a pre-commit hook)
       --no-default-skips  also scan lock files, *.min.js and source maps
       --no-entropy do not look for high-entropy strings, only for known patterns
+      --list-rules  list the detection rules and exit
+      --only ID    run only this rule (repeatable); --disable ID turns a rule off
       --show-secrets  print the matched text instead of masking it
   -f, --format FMT  output format: text (default), json or sarif
       --include GLOB  only scan files matching GLOB (repeatable)
@@ -52,6 +54,9 @@ const OPTIONS = {
   staged: { type: "boolean" },
   "no-default-skips": { type: "boolean" },
   "no-entropy": { type: "boolean" },
+  "list-rules": { type: "boolean" },
+  only: { type: "string", multiple: true },
+  disable: { type: "string", multiple: true },
   "show-secrets": { type: "boolean" },
   format: { type: "string", short: "f", default: "text" },
   include: { type: "string", multiple: true },
@@ -136,6 +141,18 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     stdout.write(`secrets-scan ${pkg.version}\n`);
     return EXIT_CLEAN;
   }
+  if (values["list-rules"]) {
+    const catalog = ruleCatalog();
+    const width = Math.max(...catalog.map((rule) => rule.id.length));
+    for (const rule of catalog) stdout.write(`${rule.id.padEnd(width)}  ${rule.severity.padEnd(6)}  ${rule.description}\n`);
+    return EXIT_CLEAN;
+  }
+  let selection;
+  try {
+    selection = selectRules({ only: values.only, disable: values.disable });
+  } catch (error) {
+    throw new UsageError(error.message);
+  }
 
   if (!FORMATS.includes(values.format)) {
     throw new UsageError(`unknown format '${values.format}' (use ${FORMATS.join(" or ")})`);
@@ -173,7 +190,7 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     skip: new Set([values.baseline, values["write-baseline"]].filter(Boolean).map((file) => path.resolve(cwd, file))),
     exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
-  const scanOptions = { entropy: !values["no-entropy"], maxLineLength };
+  const scanOptions = { entropy: selection.entropy && !values["no-entropy"], maxLineLength };
   const roots = positionals.length > 0 ? positionals : ["."];
   let findings = [];
   let filesScanned = 0;
@@ -193,7 +210,7 @@ async function run(argv, { stdout, stderr, cwd, env }) {
         continue;
       }
       filesScanned += 1;
-      findings.push(...scanBuffer(buffer, source.relative, RULES, scanOptions));
+      findings.push(...scanBuffer(buffer, source.relative, selection.rules, scanOptions));
     }
   }
   const minimum = SEVERITIES.indexOf(values["min-severity"]);
