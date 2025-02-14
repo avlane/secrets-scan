@@ -45,11 +45,34 @@ export function isKnownNonSecret(token, line, index) {
 // Candidate tokens: runs of base64/hex characters between quotes, spaces, = or :.
 const CANDIDATE = /(?<=["'`=:\s(,]|^)([A-Za-z0-9+/_-]{20,}={0,2})(?=["'`\s),;]|$)/g;
 
-/** Yield {token, index} for every high-entropy token on a line. */
+// Words that suggest the text after them is a credential.
+const SECRET_CONTEXT = /secret|passw(?:or)?d|passwd|pwd|token|api[_-]?key|apikey|auth|credential|private[_-]?key|salt|signature|bearer|access[_-]?key|\bkeys?\b/i;
+
+export function hasSecretContext(line, index) {
+  return SECRET_CONTEXT.test(line.slice(0, index));
+}
+
+/** How many of lower case, upper case and digits (or symbols) the token uses. */
+function characterClasses(token) {
+  return [/[a-z]/, /[A-Z]/, /[0-9]/].filter((pattern) => pattern.test(token)).length;
+}
+
+/**
+ * Yield {token, index} for every high-entropy token on a line.
+ *
+ * Plain high entropy is a weak signal: git commit ids, content hashes, ObjectIds and
+ * long identifiers all have it. Without a nearby word like "secret", "token" or
+ * "key", a token is only reported if it is not hex (hashes, ids) and uses lower
+ * case, upper case and digits like generated credentials do.
+ */
 export function* findHighEntropyStrings(line, limits = DEFAULT_LIMITS) {
   for (const match of line.matchAll(CANDIDATE)) {
-    if (isHighEntropy(match[1], limits) && !isKnownNonSecret(match[1], line, match.index)) {
-      yield { token: match[1], index: match.index };
+    const token = match[1];
+    if (!isHighEntropy(token, limits) || isKnownNonSecret(token, line, match.index)) continue;
+    if (!hasSecretContext(line, match.index)) {
+      if (charsetOf(token) === "hex") continue;
+      if (characterClasses(token) < 3) continue;
     }
+    yield { token, index: match.index };
   }
 }

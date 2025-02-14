@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { charsetOf, findHighEntropyStrings, isHighEntropy, shannonEntropy } from "../src/entropy.js";
+import { charsetOf, findHighEntropyStrings, hasSecretContext, isHighEntropy, shannonEntropy } from "../src/entropy.js";
 import { RULES } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
 import { AWS_KEY } from "./fakes.js";
@@ -47,10 +47,34 @@ describe("isHighEntropy", () => {
 
 describe("findHighEntropyStrings", () => {
   it("finds quoted and assigned tokens with their position", () => {
-    const line = `key = "${RANDOM_BASE64}" # and ${RANDOM_HEX}`;
+    const line = `key = "${RANDOM_BASE64}" # and ${RANDOM_HEX}`; // "key" before both tokens
     const found = [...findHighEntropyStrings(line)];
     assert.deepEqual(found.map((f) => f.token), [RANDOM_BASE64, RANDOM_HEX]);
     assert.equal(found[0].index, 7);
+  });
+
+  it("ignores hex ids and hashes unless a word like secret or key comes first", () => {
+    const sha = "9fceb02d0ae598e95dc970b74767f19372d61af8";
+    assert.deepEqual([...findHighEntropyStrings(`commit ${sha}`)], []);
+    assert.deepEqual([...findHighEntropyStrings(`"accountId": "5b10ac8d82e05b22cc7d4ef5"`)], []);
+    assert.deepEqual([...findHighEntropyStrings(`sha256: ${RANDOM_HEX}${RANDOM_HEX}`)], []);
+    assert.equal([...findHighEntropyStrings(`secret_key = "${sha}"`)].length, 1);
+    assert.equal([...findHighEntropyStrings(`API_TOKEN=${RANDOM_HEX}`)].length, 1);
+  });
+
+  it("ignores letters-only base64-looking words unless there is context", () => {
+    const words = "ThisIsAVeryLongButPlainCamelCaseIdentifierName";
+    assert.deepEqual([...findHighEntropyStrings(`const x = "${words}"`)], []);
+    const lowerAndDigits = "k3j2h4g5f6d7s8a9q1w2e3r4t5y6u7i8o9p0z1x2";
+    assert.deepEqual([...findHighEntropyStrings(`value = "${lowerAndDigits}"`)], []);
+    assert.equal([...findHighEntropyStrings(`password = "${lowerAndDigits}"`)].length, 1);
+  });
+
+  it("looks for context only before the token", () => {
+    assert.equal(hasSecretContext("export API_TOKEN=abc", 17), true);
+    assert.equal(hasSecretContext("abc # token", 0), false);
+    assert.equal(hasSecretContext("monkey = abc", 9), false);
+    assert.equal(hasSecretContext("private key: abc", 13), true);
   });
 
   it("does not cut tokens out of longer words", () => {
