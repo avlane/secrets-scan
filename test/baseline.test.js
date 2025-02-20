@@ -46,6 +46,13 @@ describe("applyBaseline", () => {
     assert.deepEqual(fresh, []);
   });
 
+  it("counts baseline entries that no longer match anything", () => {
+    const baseline = createBaseline([finding("f1"), finding("f2"), finding("f2", "other.env")]);
+    const { stale } = applyBaseline([finding("f1")], baseline);
+    assert.equal(stale, 2);
+    assert.equal(applyBaseline([], createBaseline([])).stale, 0);
+  });
+
   it("covers one occurrence per entry: a second copy is new", () => {
     const baseline = createBaseline([finding("f1")]);
     const { fresh, known } = applyBaseline([finding("f1", "a.env", 1), finding("f1", "a.env", 2)], baseline);
@@ -89,6 +96,14 @@ describe("baseline in the cli", () => {
     assert.equal(await main(["--baseline", "b.json"], { ...io, cwd: dir }), 0);
     assert.equal(out.stdout, "");
     assert.match(out.stderr, /no new secrets found .*1 known in the baseline ignored/);
+  });
+
+  it("mentions baseline entries that are stale", async () => {
+    const { dir } = await run({ "old.env": `K=${AWS_KEY}\n` }, ["--write-baseline", "b.json"]);
+    fs.writeFileSync(path.join(dir, "old.env"), "K=rotated-and-removed\n");
+    const { io, out } = capture();
+    assert.equal(await main(["--baseline", "b.json"], { ...io, cwd: dir }), 0);
+    assert.match(out.stderr, /1 baseline entry no longer match \(refresh with --write-baseline\)/);
   });
 
   it("a missing or invalid baseline is an error", async () => {

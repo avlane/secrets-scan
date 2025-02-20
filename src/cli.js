@@ -222,6 +222,7 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     return EXIT_CLEAN;
   }
   let baselined = 0;
+  let stale = 0;
   if (values.baseline) {
     let baseline;
     try {
@@ -232,6 +233,7 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     const split = applyBaseline(findings, baseline);
     findings = split.fresh;
     baselined = split.known.length;
+    stale = split.stale;
   }
 
   const options = {
@@ -242,6 +244,6 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   if (values.format === "json") stdout.write(formatJson(findings, options));
   else if (values.format === "sarif") stdout.write(formatSarif(findings, { ...options, catalog: ruleCatalog() }));
   else stdout.write(formatText(findings, options));
-  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge }));
+  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge, stale }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }

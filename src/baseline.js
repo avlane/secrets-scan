@@ -32,7 +32,8 @@ export function readBaseline(file) {
 /**
  * Split findings into those that are new and those the baseline already knows. Each
  * baseline entry covers one finding, so a second copy of the same secret in the same
- * file is new.
+ * file is new. `stale` counts baseline entries that match nothing any more (the
+ * secret was removed or moved), a hint to refresh the file.
  */
 export function applyBaseline(findings, baseline) {
   const remaining = new Map();
@@ -50,5 +51,7 @@ export function applyBaseline(findings, baseline) {
       fresh.push(finding);
     }
   }
-  return { fresh, known };
+  let stale = 0;
+  for (const left of remaining.values()) stale += left;
+  return { fresh, known, stale };
 }
