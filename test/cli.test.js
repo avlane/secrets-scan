@@ -126,6 +126,26 @@ describe("cli", () => {
     assert.deepEqual(stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["src/c.env:1:3"]);
   });
 
+  it("allowlist entries can name a rule or a fingerprint, and can expire", async () => {
+    const files = { "a.env": `K=${AWS_KEY}\nT=${GITHUB_TOKEN}\n` };
+    const json = JSON.parse((await run(files, ["-f", "json"])).stdout);
+    const awsFingerprint = json.findings.find((f) => f.rule === "aws-access-key-id").fingerprint;
+    const byRule = await run({ ...files, "allow.txt": "rule: github-token @ *.env\n" }, ["--allowlist", "allow.txt"]);
+    assert.deepEqual(byRule.stdout.trim().split("\n").map((l) => l.split("  ")[1]), ["aws-access-key-id"]);
+    const byFingerprint = await run({ ...files, "allow.txt": `fingerprint: ${awsFingerprint}\nrule: github-token\n` }, ["--allowlist", "allow.txt"]);
+    assert.equal(byFingerprint.code, 0);
+    const expired = await run({ ...files, "allow.txt": "rule: github-token  expires=2020-01-01\n" }, ["--allowlist", "allow.txt"]);
+    assert.equal(expired.code, 1);
+    assert.equal(expired.stdout.trim().split("\n").length, 2);
+    assert.match(expired.stderr, /warning: allowlist entry expired on 2020-01-01 and is ignored: allow\.txt:1: rule: github-token/);
+  });
+
+  it("an allowlist entry for an unknown rule is an error", async () => {
+    const { code, stderr } = await run({ "allow.txt": "rule: github-tokens\n" }, ["--allowlist", "allow.txt"]);
+    assert.equal(code, 2);
+    assert.match(stderr, /allow\.txt:1: unknown rule 'github-tokens'/);
+  });
+
   it("takes an explicit allowlist and fails if it is missing or invalid", async () => {
     const files = { "k.env": `${AWS_KEY}\n`, "mine.txt": "path: k.env\n", "bad.txt": "nonsense\n" };
     assert.equal((await run(files, ["--allowlist", "mine.txt"])).code, 0);

@@ -175,9 +175,16 @@ async function run(argv, { stdout, stderr, cwd, env }) {
   const allowlistFile = path.resolve(cwd, values.allowlist ?? DEFAULT_ALLOWLIST_NAME);
   if (values.allowlist || fs.existsSync(allowlistFile)) {
     try {
-      allowlist = loadAllowlist(allowlistFile);
+      allowlist = loadAllowlist(allowlistFile, values.allowlist ?? DEFAULT_ALLOWLIST_NAME);
     } catch (error) {
       throw new UsageError(error.code === "ENOENT" ? `cannot read allowlist: ${error.message}` : error.message);
+    }
+    const known = new Set(ruleCatalog().map((rule) => rule.id));
+    for (const rule of allowlist.rules) {
+      if (!known.has(rule.id)) throw new UsageError(`${rule.where}: unknown rule '${rule.id}' (see --list-rules)`);
+    }
+    for (const entry of allowlist.expired) {
+      stderr.write(`secrets-scan: warning: allowlist entry expired on ${entry.date} and is ignored: ${entry.where}: ${entry.entry}\n`);
     }
   }
 

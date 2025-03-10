@@ -20,8 +20,13 @@ directory; `**` crosses directories.
 Findings that are fine can be listed in `.secrets-allowlist` (or `--allowlist FILE`), one entry
 per line, `#` for comments:
 
-    path: docs/examples/**         # every finding in these files
-    regex: ^AKIAIOSFODNN7EXAMPLE$  # findings whose secret text matches
+    path: docs/examples/**                      # every finding in these files
+    regex: ^AKIAIOSFODNN7EXAMPLE$               # findings whose secret text matches
+    rule: generic-secret-assignment @ test/**   # one rule, optionally only in some files
+    fingerprint: 3fa9c1d2e4b5a6978c0d1e2f3a4b5c6d   # one finding, from --format json
+
+Any entry may end with `expires=2026-01-31`; after that day it is ignored (and a warning
+says so), so temporary exceptions don't become permanent.
 ## Inline ignores
 
 Silence a single finding with a comment in the file itself:
