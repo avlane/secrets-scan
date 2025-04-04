@@ -38,7 +38,7 @@ const INTEGRITY = /^sha(?:1|256|384|512)-/;
  * "sha512-..." integrity hashes of package managers and inline base64 data.
  */
 export function isKnownNonSecret(token, line, index) {
-  if (UUID.test(token) || INTEGRITY.test(token)) return true;
+  if (UUID.test(token) || INTEGRITY.test(token) || token.includes("EXAMPLE")) return true;
   return line.slice(Math.max(0, index - 8), index).endsWith("base64,");
 }
 

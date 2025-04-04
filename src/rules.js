@@ -12,10 +12,17 @@ const PLACEHOLDER_WORDS = [
   "sample", "redacted", "todo", "fixme",
 ];
 
-/** Values that obviously are not real credentials: examples, masks, repeated characters. */
+// Syntax for "the value comes from somewhere else": ${VAR}, $VAR, $(cmd), {{ var }}, <value>,
+// %(name)s, %s, process.env.X, os.environ[...], ENV["X"], getenv(...)
+const TEMPLATE_REFERENCE = /^\s*(?:\$\{.*\}|\$\(.*\)|\$[A-Za-z_]\w*|\{\{.*\}\}|<[^>]*>|%\(\w+\)s|%[sd]|\[[^\]]*\])\s*$|process\.env|os\.environ|\bENV\[|getenv\(|\bsecrets\.\w+/;
+
+/** Values that obviously are not real credentials: examples, masks, repeated characters, references. */
 export function looksLikePlaceholder(value) {
   const lower = value.toLowerCase();
   if (PLACEHOLDER_WORDS.some((word) => lower.includes(word))) return true;
+  if (TEMPLATE_REFERENCE.test(value)) return true;
+  if (/x{4,}/i.test(value) || /\*{3,}/.test(value)) return true;
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value)) return true; // MY_ENV_VARIABLE_NAME
   if (/^(.)\1+$/.test(value)) return true;
   if (/^[*#x.-]+$/i.test(value)) return true;
   // snake_case, kebab-case or dotted words: translation keys and identifiers, not passwords
@@ -35,6 +42,8 @@ export const RULES = [
     severity: "high",
     pattern: /\b((?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16})\b/,
     group: 1,
+    // The keys printed in AWS's own documentation all end in EXAMPLE.
+    validate: (key) => !key.endsWith("EXAMPLE"),
   },
   {
     id: "private-key",

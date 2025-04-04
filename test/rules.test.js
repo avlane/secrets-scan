@@ -187,11 +187,20 @@ describe("scanText", () => {
 
   it("ignores placeholders", () => {
     for (const value of ["changeme123", "your_password_here", "xxxxxxxxxxxx", "************",
-      "aaaaaaaaaaaa", "EXAMPLE_TOKEN_VALUE", "placeholder-value", "dummyvalue123"]) {
+      "aaaaaaaaaaaa", "EXAMPLE_TOKEN_VALUE", "placeholder-value", "dummyvalue123",
+      "${DB_PASSWORD}", "$DB_PASSWORD", "$(cat /run/secrets/db)", "{{ vault_password }}", "<your-password>",
+      "%(password)s", "process.env.DB_PASSWORD", "os.environ['DB_PASSWORD']", "DB_PASSWORD_FROM_ENV",
+      "abcxxxxdef123", "ab***cdefgh"]) {
       assert.deepEqual(scan(`secret = "${value}"`), [], value);
       assert.ok(looksLikePlaceholder(value), value);
     }
     assert.ok(!looksLikePlaceholder("k8d92jfh38dh2"));
+  });
+
+  it("does not report the example keys from AWS documentation", () => {
+    assert.deepEqual(scan("aws_access_key_id = " + "AKIA" + "IOSFODNN7EXAMPLE"), []);
+    assert.deepEqual(scan("key: " + "ASIA" + "IOSFODNN7EXAMPLE"), []);
+    assert.equal(scan("aws_access_key_id = " + AWS_KEY).length, 1);
   });
 
   it("ignores identifiers and translation keys used as values", () => {

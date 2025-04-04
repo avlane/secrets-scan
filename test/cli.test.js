@@ -62,7 +62,7 @@ describe("cli", () => {
   });
 
   it("finds high-entropy strings unless told not to", async () => {
-    const files = { "app.conf": "blob = wJalrXUtnFEMI/K7MDENG/bPxRfi" + "CYzEXAMPLEKEY\n" };
+    const files = { "app.conf": "blob = wJalrXUtnFEMI/K7MDENG/bPxRfi" + "CYq3Zd8TSKuvB\n" };
     const found = await run(files);
     assert.equal(found.code, 1);
     assert.match(found.stdout, /high-entropy-string/);
@@ -116,7 +116,7 @@ describe("cli", () => {
 
   it("applies the default .secrets-allowlist", async () => {
     const files = {
-      ".secrets-allowlist": "path: docs/**\nregex: ^AKIA\\w+EXAMPLE$\n",
+      ".secrets-allowlist": "path: docs/**\nregex: ^AKIAQYL\\w+$\n",
       "docs/a.md": `${GITHUB_TOKEN}\n`,
       "src/b.env": `${AWS_KEY}\n`,
       "src/c.env": `T=${GITHUB_TOKEN}\n`,

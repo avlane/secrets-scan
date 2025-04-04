@@ -6,8 +6,8 @@ import { RULES } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
 import { AWS_KEY } from "./fakes.js";
 
-// 40 characters, the shape of an AWS secret access key; made up.
-const RANDOM_BASE64 = "wJalrXUtnFEMI/K7MDENG/bPxRfi" + "CYzEXAMPLEKEY";
+// 41 characters, the shape of an AWS secret access key; made up.
+const RANDOM_BASE64 = "wJalrXUtnFEMI/K7MDENG/bPxRfi" + "CYq3Zd8TSKuvB";
 const RANDOM_HEX = "9f86d081884c7d659a2feaa0c55ad015";
 
 describe("shannonEntropy", () => {
