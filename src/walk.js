@@ -43,9 +43,9 @@ export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS, include = null
     } catch {
       continue;
     }
-    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const sorted = entries.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const subdirs = [];
-    for (const entry of entries) {
+    for (const entry of sorted) {
       const full = path.join(dir, entry.name);
       const relative = path.relative(root, full).split(path.sep).join("/");
       if (entry.isDirectory()) {

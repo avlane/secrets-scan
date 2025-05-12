@@ -8,7 +8,7 @@ import fs from "node:fs";
 export function createBaseline(findings) {
   const entries = findings
     .map((f) => ({ fingerprint: f.fingerprint, rule: f.ruleId, path: f.path, line: f.line }))
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
+    .toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
   return { version: 1, findings: entries };
 }
 
