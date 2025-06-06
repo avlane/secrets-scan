@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { afterEach, describe, it } from "node:test";
 
 import { main } from "../src/cli.js";
@@ -205,6 +206,23 @@ describe("cli", () => {
     const bad = await run(files, ["--only", "nonsense"]);
     assert.equal(bad.code, 2);
     assert.match(bad.stderr, /unknown rule 'nonsense'/);
+  });
+
+  it("scans standard input with --stdin or the path -", async () => {
+    const scanStdin = async (args, text) => {
+      const { io, out } = capture();
+      const code = await main(args, { ...io, stdin: Readable.from([Buffer.from(text)]), cwd: process.cwd() });
+      return { code, ...out };
+    };
+    const staged = await scanStdin(["--stdin"], `line one\nK=${AWS_KEY}\n`);
+    assert.equal(staged.code, 1);
+    assert.match(staged.stdout, /^<stdin>:2:3 {2}aws-access-key-id/);
+    const named = await scanStdin(["-", "--stdin-filename", "config/prod.env"], `K=${AWS_KEY}\n`);
+    assert.match(named.stdout, /^config\/prod\.env:1:3 /);
+    assert.equal((await scanStdin(["--stdin"], "nothing here\n")).code, 0);
+    const mixed = await scanStdin(["--stdin", "somewhere"], "x");
+    assert.equal(mixed.code, 2);
+    assert.match(mixed.stderr, /cannot be combined with PATH/);
   });
 
   it("skips binary files", async () => {

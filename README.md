@@ -65,3 +65,7 @@ is what a pre-commit hook needs:
 
     #!/bin/sh
     exec npx secrets-scan --staged
+## Standard input
+
+`secrets-scan --stdin --stdin-filename deploy/prod.env < file` (or the path `-`) scans text
+piped in, for example the output of `git show` or a template renderer.

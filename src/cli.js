@@ -25,6 +25,8 @@ Scan files below each PATH (default: the current directory) for likely secrets.
 Options:
   -h, --help       show this help
   -v, --version    show the version
+      --stdin      read the text to scan from standard input (also: PATH "-")
+      --stdin-filename NAME  name to report for standard input (default: <stdin>)
       --git        scan only the files git tracks (instead of walking the directory)
       --staged     scan the content staged in git's index (for a pre-commit hook)
       --no-default-skips  also scan lock files, *.min.js and source maps
@@ -53,6 +55,8 @@ const OPTIONS = {
   git: { type: "boolean" },
   staged: { type: "boolean" },
   "no-default-skips": { type: "boolean" },
+  stdin: { type: "boolean" },
+  "stdin-filename": { type: "string" },
   "no-entropy": { type: "boolean" },
   "list-rules": { type: "boolean" },
   only: { type: "string", multiple: true },
@@ -73,6 +77,28 @@ const OPTIONS = {
 const FORMATS = ["text", "json", "sarif"];
 
 class UsageError extends Error {}
+
+async function readAll(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+/** All the sources named on the command line: standard input, or the files below each PATH. */
+async function collectSources({ positionals, values, context, cwd, stdin }) {
+  if (values.stdin || positionals.includes("-")) {
+    if (positionals.some((p) => p !== "-")) throw new UsageError("standard input cannot be combined with PATH arguments");
+    const buffer = await readAll(stdin);
+    return [{ relative: values["stdin-filename"] ?? "<stdin>", read: () => buffer }];
+  }
+  const sources = [];
+  for (const root of positionals.length > 0 ? positionals : ["."]) {
+    const absoluteRoot = path.resolve(cwd, root);
+    if (!fs.existsSync(absoluteRoot)) throw new UsageError(`no such file or directory: ${root}`);
+    sources.push(...sourcesFor(absoluteRoot, context));
+  }
+  return sources;
+}
 
 /**
  * The files to scan for one PATH argument, as [{relative, read()}].
@@ -115,7 +141,7 @@ export async function main(argv, io = {}) {
   const cwd = io.cwd ?? process.cwd();
 
   try {
-    return await run(argv, { stdout, stderr, cwd, env: io.env ?? process.env });
+    return await run(argv, { stdout, stderr, cwd, env: io.env ?? process.env, stdin: io.stdin ?? process.stdin });
   } catch (error) {
     if (error instanceof UsageError || error instanceof GitError) {
       stderr.write(`secrets-scan: ${error.message}\n`);
@@ -125,7 +151,7 @@ export async function main(argv, io = {}) {
   }
 }
 
-async function run(argv, { stdout, stderr, cwd, env }) {
+async function run(argv, { stdout, stderr, cwd, env, stdin }) {
   let parsed;
   try {
     parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true });
@@ -198,27 +224,22 @@ async function run(argv, { stdout, stderr, cwd, env }) {
     exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
   const scanOptions = { entropy: selection.entropy && !values["no-entropy"], maxLineLength };
-  const roots = positionals.length > 0 ? positionals : ["."];
   let findings = [];
   let filesScanned = 0;
   let skippedLarge = 0;
-  for (const root of roots) {
-    const absoluteRoot = path.resolve(cwd, root);
-    if (!fs.existsSync(absoluteRoot)) throw new UsageError(`no such file or directory: ${root}`);
-    for (const source of sourcesFor(absoluteRoot, context)) {
-      let buffer;
-      try {
-        buffer = source.read();
-      } catch {
-        continue; // vanished since it was listed, e.g. tracked but deleted
-      }
-      if (buffer.length > maxSize) {
-        skippedLarge += 1;
-        continue;
-      }
-      filesScanned += 1;
-      findings.push(...scanBuffer(buffer, source.relative, selection.rules, scanOptions));
+  for (const source of await collectSources({ positionals, values, context, cwd, stdin })) {
+    let buffer;
+    try {
+      buffer = source.read();
+    } catch {
+      continue; // vanished since it was listed, e.g. tracked but deleted
     }
+    if (buffer.length > maxSize) {
+      skippedLarge += 1;
+      continue;
+    }
+    filesScanned += 1;
+    findings.push(...scanBuffer(buffer, source.relative, selection.rules, scanOptions));
   }
   const minimum = SEVERITIES.indexOf(values["min-severity"]);
   findings = findings.filter((f) => !isAllowed(f, allowlist) && SEVERITIES.indexOf(f.severity) >= minimum);
