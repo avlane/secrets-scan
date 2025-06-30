@@ -4,8 +4,9 @@ import { describe, it } from "node:test";
 import { RULES, ruleCatalog, looksLikePlaceholder, selectRules } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
 import {
-  AWS_KEY, GITHUB_TOKEN, GOOGLE_API_KEY, MAILGUN_KEY, NPM_TOKEN, PRIVATE_KEY_HEADER, SENDGRID_KEY,
-  SLACK_TOKEN, SLACK_WEBHOOK, STRIPE_KEY, STRIPE_WEBHOOK, TWILIO_KEY,
+  AWS_KEY, AZURE_STORAGE_KEY, DATABRICKS_TOKEN, DIGITALOCEAN_TOKEN, DISCORD_WEBHOOK, GITHUB_TOKEN,
+  GOOGLE_API_KEY, MAILGUN_KEY, NPM_TOKEN, PRIVATE_KEY_HEADER, PYPI_TOKEN, SENDGRID_KEY, SENTRY_TOKEN,
+  SHOPIFY_TOKEN, SLACK_TOKEN, SLACK_WEBHOOK, SQUARE_TOKEN, STRIPE_KEY, STRIPE_WEBHOOK, TWILIO_KEY,
 } from "./fakes.js";
 
 const scan = (text) => scanText(text, "file.txt", RULES);
@@ -112,6 +113,38 @@ describe("scanText", () => {
         assert.equal(found[0].secret, secret);
       }
     }
+  });
+
+  it("finds more provider credentials", () => {
+    const cases = {
+      "pypi-token": PYPI_TOKEN,
+      "shopify-token": SHOPIFY_TOKEN,
+      "digitalocean-token": DIGITALOCEAN_TOKEN,
+      "databricks-token": DATABRICKS_TOKEN,
+      "sentry-auth-token": SENTRY_TOKEN,
+      "square-token": SQUARE_TOKEN,
+      "discord-webhook": DISCORD_WEBHOOK,
+    };
+    for (const [ruleId, secret] of Object.entries(cases)) {
+      for (const line of [`x = "${secret}"`, `X=${secret}`, `curl ${secret} --fail`]) {
+        const found = scan(line);
+        assert.equal(found.length, 1, `${ruleId}: ${line}`);
+        assert.equal(found[0].ruleId, ruleId, line);
+        assert.equal(found[0].secret, secret);
+      }
+    }
+    const [azure] = scan(`DefaultEndpointsProtocol=https;AccountName=demo;${AZURE_STORAGE_KEY};EndpointSuffix=core.windows.net`);
+    assert.equal(azure.ruleId, "azure-storage-key");
+    assert.equal(azure.secret, AZURE_STORAGE_KEY.slice("AccountKey=".length));
+  });
+
+  it("does not take look-alikes for those credentials", () => {
+    const rulesOnly = (text) => scanText(text, "file.txt", RULES, { entropy: false });
+    assert.deepEqual(rulesOnly("shpat_" + "0123456789abcdef0123456789abcde"), []);
+    assert.deepEqual(rulesOnly("dop_v1_" + "xyz"), []);
+    assert.deepEqual(rulesOnly("dapi" + "0123456789abcdef0123456789abcdez"), []);
+    assert.deepEqual(rulesOnly("pypi-" + "short"), []);
+    assert.deepEqual(rulesOnly("https://discord.com/channels/123/456"), []);
   });
 
   it("does not take test keys or near misses for live keys", () => {
