@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { display, formatJson, formatSarif, formatSummary, formatText, redact, summarize, useColor } from "../src/report.js";
+import { display, formatGithub, formatJson, formatSarif, formatSummary, formatText, redact, summarize, useColor } from "../src/report.js";
 
 describe("redact", () => {
   it("masks short secrets completely", () => {
@@ -88,6 +88,33 @@ describe("formatSarif", () => {
   it("is a valid document without results", () => {
     const doc = JSON.parse(formatSarif([], { catalog }));
     assert.deepEqual(doc.runs[0].results, []);
+  });
+});
+
+describe("formatGithub", () => {
+  const base = { column: 5, endColumn: 15, secret: "THE-SECRET", ruleId: "github-token", message: "GitHub token" };
+
+  it("emits one workflow command per finding with a level from the severity", () => {
+    const out = formatGithub([
+      { ...base, path: "src/a.js", line: 3, severity: "high" },
+      { ...base, path: "b.env", line: 9, severity: "medium", ruleId: "high-entropy-string", message: "High-entropy string" },
+      { ...base, path: "c.txt", line: 1, severity: "low" },
+    ]);
+    assert.deepEqual(out.trimEnd().split("\n"), [
+      "::error file=src/a.js,line=3,col=5,endColumn=15,title=github-token::GitHub token",
+      "::warning file=b.env,line=9,col=5,endColumn=15,title=high-entropy-string::High-entropy string",
+      "::notice file=c.txt,line=1,col=5,endColumn=15,title=github-token::GitHub token",
+    ]);
+  });
+
+  it("escapes characters that would break the command", () => {
+    const out = formatGithub([{ ...base, path: "odd,name:100%\n.txt", line: 1, severity: "high", message: "50%\nmore" }]);
+    assert.equal(out, "::error file=odd%2Cname%3A100%25%0A.txt,line=1,col=5,endColumn=15,title=github-token::50%25%0Amore\n");
+  });
+
+  it("does not contain the secret and is empty without findings", () => {
+    assert.ok(!formatGithub([{ ...base, path: "a", line: 1, severity: "high" }]).includes("THE-SECRET"));
+    assert.equal(formatGithub([]), "");
   });
 });
 

@@ -52,8 +52,8 @@ The baseline stores hashes (rule + path + secret), never the secrets, and surviv
 number changes.
 ## Output formats
 
-`--format text` (default), `--format json`, and `--format sarif` for GitHub code scanning
-and IDE viewers:
+`--format text` (default), `--format json`, `--format sarif` for GitHub code scanning
+and IDE viewers, and `--format github` for annotations in a workflow run:
 
     secrets-scan --format sarif > results.sarif
 

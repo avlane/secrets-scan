@@ -98,6 +98,12 @@ describe("cli", () => {
     assert.ok(!stdout.includes(AWS_KEY));
   });
 
+  it("prints GitHub annotations with --format github", async () => {
+    const { code, stdout } = await run({ "src/k.env": `KEY=${AWS_KEY}\n` }, ["--format", "github"]);
+    assert.equal(code, 1);
+    assert.equal(stdout, "::error file=src/k.env,line=1,col=5,endColumn=25,title=aws-access-key-id::AWS access key ID\n");
+  });
+
   it("rejects unknown formats", async () => {
     const { code, stderr } = await run({}, ["--format", "xml"]);
     assert.equal(code, 2);

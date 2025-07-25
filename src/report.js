@@ -51,6 +51,29 @@ export function useColor(mode, stream, env) {
   return Boolean(stream.isTTY);
 }
 
+const GITHUB_LEVEL = { high: "error", medium: "warning", low: "notice" };
+
+function escapeData(text) {
+  return text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+function escapeProperty(text) {
+  return escapeData(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
+}
+
+/**
+ * GitHub Actions workflow commands: each finding becomes an annotation on the file and
+ * line in the pull request. The secret is never part of the message.
+ */
+export function formatGithub(findings) {
+  return findings
+    .map((f) => {
+      const properties = `file=${escapeProperty(f.path)},line=${f.line},col=${f.column},endColumn=${f.endColumn},title=${escapeProperty(f.ruleId)}`;
+      return `::${GITHUB_LEVEL[f.severity]} ${properties}::${escapeData(f.message)}\n`;
+    })
+    .join("");
+}
+
 const SARIF_LEVEL = { high: "error", medium: "warning", low: "note" };
 const SARIF_SEVERITY = { high: "8.0", medium: "5.0", low: "3.0" };
 

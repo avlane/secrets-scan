@@ -6,7 +6,7 @@ import { DEFAULT_ALLOWLIST_NAME, EMPTY_ALLOWLIST, isAllowed, loadAllowlist } fro
 import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
 import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
 import { createMatcher } from "./glob.js";
-import { formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
+import { formatGithub, formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
 import { SEVERITIES, ruleCatalog, selectRules } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
 import { parseSize } from "./size.js";
@@ -34,7 +34,7 @@ Options:
       --list-rules  list the detection rules and exit
       --only ID    run only this rule (repeatable); --disable ID turns a rule off
       --show-secrets  print the matched text instead of masking it
-  -f, --format FMT  output format: text (default), json or sarif
+  -f, --format FMT  output format: text (default), json, sarif or github (Actions annotations)
       --include GLOB  only scan files matching GLOB (repeatable)
       --exclude GLOB  skip files and directories matching GLOB (repeatable)
       --allowlist FILE  entries to ignore (default: .secrets-allowlist if it exists)
@@ -74,7 +74,7 @@ const OPTIONS = {
   color: { type: "string", default: "auto" },
   quiet: { type: "boolean", short: "q" },
 };
-const FORMATS = ["text", "json", "sarif"];
+const FORMATS = ["text", "json", "sarif", "github"];
 
 class UsageError extends Error {}
 
@@ -271,6 +271,7 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
   };
   if (values.format === "json") stdout.write(formatJson(findings, options));
   else if (values.format === "sarif") stdout.write(formatSarif(findings, { ...options, catalog: ruleCatalog() }));
+  else if (values.format === "github") stdout.write(formatGithub(findings));
   else stdout.write(formatText(findings, options));
   if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge, stale }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
