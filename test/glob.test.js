@@ -53,6 +53,21 @@ describe("globs with a slash are anchored", () => {
   });
 });
 
+describe("leading ./", () => {
+  it("is ignored, so ./docs/gen and docs/gen are the same pattern", () => {
+    assert.ok(matches("./docs/generated", "docs/generated/api.html"));
+    assert.ok(matches("./docs/generated/", "docs/generated/api.html"));
+    assert.ok(!matches("./docs/generated", "x/docs/generated"));
+    assert.ok(matches("././src/**/*.js", "src/a/b.js"));
+    assert.ok(matches("./*.md", "README.md") && matches("./*.md", "docs/README.md"));
+  });
+
+  it("a lone ./ is not a pattern", () => {
+    assert.equal(compileGlob("./"), null);
+    assert.ok(!createMatcher(["./"]).matches("anything"));
+  });
+});
+
 describe("createMatcher", () => {
   it("matches if any pattern does, ignores blanks", () => {
     const matcher = createMatcher(["*.md", "  ", "vendor/"]);

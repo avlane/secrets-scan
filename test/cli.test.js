@@ -231,6 +231,12 @@ describe("cli", () => {
     assert.match(mixed.stderr, /cannot be combined with PATH/);
   });
 
+  it("accepts ./ in front of exclude patterns", async () => {
+    const files = { "vendor/a.env": `K=${AWS_KEY}\n`, "src/b.env": `K=${AWS_KEY}\n` };
+    const { stdout } = await run(files, ["--exclude", "./vendor"]);
+    assert.deepEqual(stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["src/b.env:1:3"]);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

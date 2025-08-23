@@ -48,6 +48,8 @@ function translate(pattern) {
 
 export function compileGlob(text) {
   let pattern = text.trim();
+  // "./vendor" and "./**/*.snap" mean the same as "vendor" and "**/*.snap" relative to the root
+  while (pattern.startsWith("./")) pattern = pattern.slice(2);
   if (pattern === "") return null;
   const directoryOnly = pattern.endsWith("/");
   if (directoryOnly) pattern = pattern.slice(0, -1);
