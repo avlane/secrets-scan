@@ -58,6 +58,12 @@ and IDE viewers, and `--format github` for annotations in a workflow run:
     secrets-scan --format sarif > results.sarif
 
 Secrets are masked in every format unless you pass `--show-secrets`; SARIF never contains them.
+## Pull requests: only what is new
+
+`secrets-scan --diff origin/main` scans only the lines added since a ref - what a pull request
+introduces - and reports them at their real line numbers. Old findings in untouched code never
+fail the build, and no baseline is needed.
+
 ## Pre-commit
 
 `secrets-scan --staged` scans the content staged in git's index (not the working tree), which

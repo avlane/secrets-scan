@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 
 import { DEFAULT_ALLOWLIST_NAME, EMPTY_ALLOWLIST, isAllowed, loadAllowlist } from "./allowlist.js";
 import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
-import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
+import { GitError, addedLines, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
 import { createMatcher } from "./glob.js";
 import { formatGithub, formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
 import { SEVERITIES, ruleCatalog, selectRules } from "./rules.js";
@@ -28,6 +28,7 @@ Options:
       --stdin      read the text to scan from standard input (also: PATH "-")
       --stdin-filename NAME  name to report for standard input (default: <stdin>)
       --git        scan only the files git tracks (instead of walking the directory)
+      --diff REF   scan only the lines added since REF, e.g. origin/main (for pull requests)
       --staged     scan the content staged in git's index (for a pre-commit hook)
       --no-default-skips  also scan lock files, *.min.js and source maps
       --no-entropy do not look for high-entropy strings, only for known patterns
@@ -54,6 +55,7 @@ const OPTIONS = {
   version: { type: "boolean", short: "v" },
   git: { type: "boolean" },
   staged: { type: "boolean" },
+  diff: { type: "string" },
   "no-default-skips": { type: "boolean" },
   stdin: { type: "boolean" },
   "stdin-filename": { type: "string" },
@@ -84,6 +86,24 @@ async function readAll(stream) {
   return Buffer.concat(chunks);
 }
 
+/** Text with the added lines at their real line numbers and every other line empty. */
+function synthesize(added) {
+  const lines = Array.from({ length: Math.max(...added.keys()) }, () => "");
+  for (const [number, text] of added) lines[number - 1] = text;
+  return Buffer.from(lines.join("\n"));
+}
+
+function diffSources(absoluteRoot, ref, { include, exclude, skip }) {
+  const sources = [];
+  for (const [relative, added] of addedLines(absoluteRoot, ref)) {
+    if (added.size === 0 || hasBinaryExtension(relative)) continue;
+    if (exclude.matches(relative) || (include.size > 0 && !include.matches(relative))) continue;
+    if (skip.has(path.join(absoluteRoot, ...relative.split("/")))) continue;
+    sources.push({ relative, read: () => synthesize(added) });
+  }
+  return sources;
+}
+
 /** All the sources named on the command line: standard input, or the files below each PATH. */
 async function collectSources({ positionals, values, context, cwd, stdin }) {
   if (values.stdin || positionals.includes("-")) {
@@ -95,7 +115,7 @@ async function collectSources({ positionals, values, context, cwd, stdin }) {
   for (const root of positionals.length > 0 ? positionals : ["."]) {
     const absoluteRoot = path.resolve(cwd, root);
     if (!fs.existsSync(absoluteRoot)) throw new UsageError(`no such file or directory: ${root}`);
-    sources.push(...sourcesFor(absoluteRoot, context));
+    sources.push(...(values.diff === undefined ? sourcesFor(absoluteRoot, context) : diffSources(absoluteRoot, values.diff, context)));
   }
   return sources;
 }
@@ -214,7 +234,9 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
     }
   }
 
-  if (values.git && values.staged) throw new UsageError("--git and --staged cannot be combined");
+  if ([values.git, values.staged, values.diff !== undefined, values.stdin].filter(Boolean).length > 1) {
+    throw new UsageError("--git, --staged, --diff and --stdin cannot be combined");
+  }
   const context = {
     git: values.git,
     staged: values.staged,

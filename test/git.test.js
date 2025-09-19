@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
 import { main } from "../src/cli.js";
-import { GitError, listStagedFiles, listTrackedFiles, readStagedFile } from "../src/git.js";
-import { AWS_KEY } from "./fakes.js";
+import { GitError, listStagedFiles, listTrackedFiles, parseDiff, readStagedFile } from "../src/git.js";
+import { AWS_KEY, GITHUB_TOKEN } from "./fakes.js";
 import { capture, makeTree } from "./helpers.js";
 
 let haveGit = true;
@@ -26,6 +26,47 @@ function repo(files, tracked) {
   if (tracked.length > 0) execFileSync("git", ["add", "--", ...tracked], { cwd: dir });
   return dir;
 }
+
+const SAMPLE_DIFF = [
+  "diff --git a/src/app.js b/src/app.js",
+  "index 83db48f..bf2a1c3 100644",
+  "--- a/src/app.js",
+  "+++ b/src/app.js",
+  "@@ -3,0 +4,2 @@ function main() {",
+  "+const a = 1;",
+  "+++ looks like a header but is content",
+  "@@ -10 +12 @@ other",
+  "-old",
+  "+new line",
+  "\\ No newline at end of file",
+  "diff --git a/gone.txt b/gone.txt",
+  "deleted file mode 100644",
+  "--- a/gone.txt",
+  "+++ /dev/null",
+  "@@ -1 +0,0 @@",
+  "-bye",
+  "diff --git a/dir/my file.txt b/dir/my file.txt",
+  "--- a/dir/my file.txt\t",
+  "+++ b/dir/my file.txt\t",
+  "@@ -0,0 +1 @@",
+  "+hello",
+  "",
+].join("\n");
+
+describe("parseDiff", () => {
+  it("collects added lines with their new line numbers", () => {
+    const files = parseDiff(SAMPLE_DIFF);
+    assert.deepEqual([...files.keys()], ["src/app.js", "dir/my file.txt"]);
+    assert.deepEqual([...files.get("src/app.js")], [
+      [4, "const a = 1;"], [5, "++ looks like a header but is content"], [12, "new line"],
+    ]);
+    assert.deepEqual([...files.get("dir/my file.txt")], [[1, "hello"]]);
+  });
+
+  it("is empty for an empty diff", () => {
+    assert.equal(parseDiff("").size, 0);
+  });
+});
 
 describe("git mode", { skip: !haveGit && "git is not installed" }, () => {
   it("lists tracked files only, relative to the directory", () => {
@@ -117,6 +158,41 @@ describe("git mode", { skip: !haveGit && "git is not installed" }, () => {
   it("--git and --staged cannot be combined", async () => {
     const { io, out } = capture();
     assert.equal(await main(["--git", "--staged"], { ...io, cwd: process.cwd() }), 2);
+    assert.match(out.stderr, /cannot be combined/);
+  });
+
+  it("--diff scans only the lines added since a ref, at their real line numbers", async () => {
+    const dir = repo({ "app.env": `OLD=${AWS_KEY}\nSAFE=1\n`, "notes.txt": "nothing\n", "removed.env": `GONE=${AWS_KEY}\n` }, ["app.env", "notes.txt", "removed.env"]);
+    const commit = (message) => execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", message], { cwd: dir });
+    commit("initial");
+    fs.appendFileSync(path.join(dir, "app.env"), `NEW=${GITHUB_TOKEN}\n`);
+    fs.writeFileSync(path.join(dir, "notes.txt"), `nothing\nmore\nkey ${AWS_KEY}\n`);
+    fs.rmSync(path.join(dir, "removed.env"));
+    const { io, out } = capture();
+    const code = await main(["--diff", "HEAD"], { ...io, cwd: dir });
+    assert.equal(code, 1);
+    assert.deepEqual(out.stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["app.env:3:5", "notes.txt:3:5"]);
+    assert.match(out.stderr, /scanned 2 files/);
+
+    execFileSync("git", ["add", "-A"], { cwd: dir });
+    commit("second");
+    const again = capture();
+    assert.equal(await main(["--diff", "HEAD~1", "--format", "json"], { ...again.io, cwd: dir }), 1);
+    assert.equal(JSON.parse(again.out.stdout).summary.total, 2);
+    const nothing = capture();
+    assert.equal(await main(["--diff", "HEAD"], { ...nothing.io, cwd: dir }), 0);
+  });
+
+  it("--diff with a ref that does not exist is an error", async () => {
+    const dir = repo({ "a.txt": "x\n" }, ["a.txt"]);
+    const { io, out } = capture();
+    assert.equal(await main(["--diff", "no-such-ref"], { ...io, cwd: dir }), 2);
+    assert.match(out.stderr, /git diff failed/);
+  });
+
+  it("--git, --staged and --diff cannot be combined", async () => {
+    const { io, out } = capture();
+    assert.equal(await main(["--diff", "HEAD", "--staged"], { ...io, cwd: process.cwd() }), 2);
     assert.match(out.stderr, /cannot be combined/);
   });
 
