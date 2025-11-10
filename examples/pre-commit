@@ -1,0 +1,4 @@
+#!/bin/sh
+# Copy to .git/hooks/pre-commit and make it executable.
+# Scans what is about to be committed (the index, not the working tree).
+exec npx --no-install secrets-scan --staged --min-severity medium

@@ -67,10 +67,13 @@ fail the build, and no baseline is needed.
 ## Pre-commit
 
 `secrets-scan --staged` scans the content staged in git's index (not the working tree), which
-is what a pre-commit hook needs:
+is what a pre-commit hook needs - see [examples/pre-commit](examples/pre-commit):
 
     #!/bin/sh
-    exec npx secrets-scan --staged
+    exec npx --no-install secrets-scan --staged --min-severity medium
+
+A pull request check that annotates the changed lines is in
+[examples/github-actions.yml](examples/github-actions.yml). Exit status 1 fails the job.
 ## Standard input
 
 `secrets-scan --stdin --stdin-filename deploy/prod.env < file` (or the path `-`) scans text

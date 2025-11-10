@@ -1,0 +1,20 @@
+# A pull request check: only lines added by the pull request are scanned, and findings
+# show up as annotations on the changed files.
+name: secrets-scan
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx secrets-scan --diff origin/${{ github.base_ref }} --format github
