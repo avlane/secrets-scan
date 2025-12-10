@@ -203,6 +203,15 @@ describe("cli", () => {
     assert.match(stdout, /^high-entropy-string +medium +High-entropy string$/m);
   });
 
+  it("--explain describes a rule", async () => {
+    const { code, stdout } = await run({}, ["--explain", "aws-access-key-id"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /^aws-access-key-id \(high\)\n {2}AWS access key ID\n/);
+    const unknown = await run({}, ["--explain", "aws"]);
+    assert.equal(unknown.code, 2);
+    assert.match(unknown.stderr, /unknown rule 'aws'/);
+  });
+
   it("--only and --disable choose the rules", async () => {
     const files = { "a.env": `K=${AWS_KEY}\nT=${GITHUB_TOKEN}\n` };
     const only = await run(files, ["--only", "github-token"]);

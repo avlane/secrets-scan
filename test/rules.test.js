@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { RULES, ruleCatalog, looksLikePlaceholder, selectRules } from "../src/rules.js";
+import { RULES, explainRule, ruleCatalog, looksLikePlaceholder, selectRules } from "../src/rules.js";
 import { scanText } from "../src/scanner.js";
 import {
   AWS_KEY, AZURE_STORAGE_KEY, DATABRICKS_TOKEN, DIGITALOCEAN_TOKEN, DISCORD_WEBHOOK, GITHUB_TOKEN,
@@ -46,6 +46,28 @@ describe("rule catalog and selection", () => {
   it("rejects unknown ids", () => {
     assert.throws(() => selectRules({ only: ["github-tokens"] }), /unknown rule 'github-tokens'/);
     assert.throws(() => selectRules({ disable: ["nope"] }), /unknown rule 'nope'/);
+  });
+});
+
+describe("explainRule", () => {
+  it("explains every rule in the catalog", () => {
+    for (const { id } of ruleCatalog()) {
+      const text = explainRule(id);
+      assert.ok(text.startsWith(`${id} (`), id);
+      assert.match(text, /What to do:/, id);
+      assert.match(text, new RegExp(`--disable ${id}`), id);
+    }
+  });
+
+  it("shows the pattern of a pattern rule and the idea of the entropy rule", () => {
+    assert.match(explainRule("github-token"), /gh\[pousr\]_/);
+    assert.match(explainRule("github-token"), /Revoke the credential/);
+    assert.match(explainRule("generic-secret-assignment"), /Check whether the value is a real credential/);
+    assert.match(explainRule("high-entropy-string"), /Shannon entropy/);
+  });
+
+  it("returns null for unknown rules", () => {
+    assert.equal(explainRule("nope"), null);
   });
 });
 

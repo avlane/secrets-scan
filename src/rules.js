@@ -231,6 +231,42 @@ export function selectRules({ only = [], disable = [] } = {}) {
   return { rules: RULES.filter((rule) => enabled(rule.id)), entropy: enabled(ENTROPY_RULE.id) };
 }
 
+const VERIFY_FIRST = new Set(["generic-secret-assignment", "high-entropy-string", "jwt"]);
+
+/** Text for `--explain RULE`, or null if there is no such rule. */
+export function explainRule(id) {
+  const rule = id === ENTROPY_RULE.id ? { ...ENTROPY_RULE, pattern: null } : RULES.find((r) => r.id === id);
+  if (!rule) return null;
+  const lines = [`${rule.id} (${rule.severity})`, `  ${rule.description}`, ""];
+  if (rule.pattern) {
+    lines.push("Matches:", `  ${rule.pattern}`, "");
+  } else {
+    lines.push(
+      "Matches:",
+      "  Quoted or assigned text of 20+ base64 or hex characters whose Shannon entropy is high",
+      "  (hex above 3.0 bits per character, base64 above 4.5). Hex strings are only reported",
+      "  after a word like secret, token or key; other tokens must mix upper case, lower case",
+      "  and digits. UUIDs, package integrity hashes and inline base64 data are skipped.",
+      "",
+    );
+  }
+  lines.push("What to do:");
+  if (VERIFY_FIRST.has(rule.id)) {
+    lines.push("  Check whether the value is a real credential. If it is, move it to a secret manager or", "  an environment variable and rotate it; if it was ever pushed, treat it as leaked.");
+  } else {
+    lines.push("  Revoke the credential at the provider and issue a new one. Deleting it from the code", "  is not enough once it has been pushed or shared.");
+  }
+  lines.push(
+    "",
+    "If it is a false positive:",
+    "  - this line:          add a comment containing  secrets-scan:ignore",
+    `  - this rule in docs:  rule: ${rule.id} @ docs/**   (in .secrets-allowlist)`,
+    "  - one finding:        fingerprint: <value from --format json>   (in .secrets-allowlist)",
+    `  - this rule everywhere: --disable ${rule.id}`,
+  );
+  return lines.join("\n") + "\n";
+}
+
 export const ENTROPY_RULE = {
   id: "high-entropy-string",
   description: "High-entropy string",

@@ -7,7 +7,7 @@ import { applyBaseline, readBaseline, writeBaseline } from "./baseline.js";
 import { GitError, addedLines, listStagedFiles, listTrackedFiles, readStagedFile } from "./git.js";
 import { createMatcher } from "./glob.js";
 import { formatGithub, formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
-import { SEVERITIES, ruleCatalog, selectRules } from "./rules.js";
+import { SEVERITIES, explainRule, ruleCatalog, selectRules } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
 import { parseSize } from "./size.js";
 import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
@@ -33,6 +33,7 @@ Options:
       --no-default-skips  also scan lock files, *.min.js and source maps
       --no-entropy do not look for high-entropy strings, only for known patterns
       --list-rules  list the detection rules and exit
+      --explain ID  describe a rule, what to do about a finding and how to silence it
       --only ID    run only this rule (repeatable); --disable ID turns a rule off
       --show-secrets  print the matched text instead of masking it
   -f, --format FMT  output format: text (default), json, sarif or github (Actions annotations)
@@ -61,6 +62,7 @@ const OPTIONS = {
   "stdin-filename": { type: "string" },
   "no-entropy": { type: "boolean" },
   "list-rules": { type: "boolean" },
+  explain: { type: "string" },
   only: { type: "string", multiple: true },
   disable: { type: "string", multiple: true },
   "show-secrets": { type: "boolean" },
@@ -191,6 +193,12 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
     const catalog = ruleCatalog();
     const width = Math.max(...catalog.map((rule) => rule.id.length));
     for (const rule of catalog) stdout.write(`${rule.id.padEnd(width)}  ${rule.severity.padEnd(6)}  ${rule.description}\n`);
+    return EXIT_CLEAN;
+  }
+  if (values.explain !== undefined) {
+    const text = explainRule(values.explain);
+    if (text === null) throw new UsageError(`unknown rule '${values.explain}' (see --list-rules)`);
+    stdout.write(text);
     return EXIT_CLEAN;
   }
   let selection;
