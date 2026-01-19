@@ -31,16 +31,18 @@ export function looksBinary(buffer) {
  * Yield the path of every regular file below `root`, in a stable order.
  * Symbolic links are not followed. `exclude` and `include` are glob matchers (see
  * glob.js): excluded directories are not entered, and when `include` is given only
- * the files it matches are yielded.
+ * the files it matches are yielded. `onError(path, error)` is told about directories
+ * that cannot be read, `onSkip(relativePath, reason)` about symbolic links.
  */
-export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS, include = null, exclude = null } = {}) {
+export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS, include = null, exclude = null, onError = null, onSkip = null } = {}) {
   const stack = [root];
   while (stack.length > 0) {
     const dir = stack.pop();
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      onError?.(dir, error);
       continue;
     }
     const sorted = entries.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -52,6 +54,8 @@ export function* walk(root, { ignoredDirs = DEFAULT_IGNORED_DIRS, include = null
         if (ignoredDirs.includes(entry.name)) continue;
         if (exclude?.matches(relative, true)) continue;
         subdirs.push(full);
+      } else if (entry.isSymbolicLink()) {
+        onSkip?.(relative, "symbolic link");
       } else if (entry.isFile()) {
         if (exclude?.matches(relative)) continue;
         if (include && include.size > 0 && !include.matches(relative)) continue;

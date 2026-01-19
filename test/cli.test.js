@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
 import { main } from "../src/cli.js";
@@ -244,6 +246,44 @@ describe("cli", () => {
     const files = { "vendor/a.env": `K=${AWS_KEY}\n`, "src/b.env": `K=${AWS_KEY}\n` };
     const { stdout } = await run(files, ["--exclude", "./vendor"]);
     assert.deepEqual(stdout.trim().split("\n").map((l) => l.split("  ")[0]), ["src/b.env:1:3"]);
+  });
+
+  const canTestPermissions = process.platform !== "win32" && process.getuid?.() !== 0;
+
+  it("warns about files and directories it cannot read and carries on", { skip: !canTestPermissions && "needs permission checks" }, async () => {
+    const { dir, cleanup } = makeTree({ "locked.env": `K=${AWS_KEY}\n`, "sealed/inner.env": `K=${AWS_KEY}\n`, "ok.env": `K=${AWS_KEY}\n` });
+    cleanups.push(() => {
+      fs.chmodSync(path.join(dir, "sealed"), 0o700);
+      cleanup();
+    });
+    fs.chmodSync(path.join(dir, "locked.env"), 0o000);
+    fs.chmodSync(path.join(dir, "sealed"), 0o000);
+    const { io, out } = capture();
+    const code = await main([], { ...io, cwd: dir });
+    assert.equal(code, 1); // the readable file still has its finding
+    assert.match(out.stdout, /^ok\.env:1:3 /);
+    assert.match(out.stderr, /warning: cannot read locked\.env: EACCES/);
+    assert.match(out.stderr, /warning: cannot read directory sealed: EACCES/);
+    assert.match(out.stderr, /1 could not be read/);
+  });
+
+  it("--verbose says what was skipped", async () => {
+    const files = { "big.env": "#".repeat(3000), "image.bin": "a\0b", "ok.txt": "fine\n" };
+    const quiet = await run(files, ["--max-size", "1k"]);
+    assert.ok(!quiet.stderr.includes("skipped (larger"));
+    const verbose = await run(files, ["--max-size", "1k", "--verbose"]);
+    assert.match(verbose.stderr, /skipped \(larger than --max-size\): big\.env/);
+    assert.match(verbose.stderr, /skipped binary file: image\.bin/);
+  });
+
+  it("--verbose mentions symbolic links, which are never followed", { skip: process.platform === "win32" }, async () => {
+    const { dir, cleanup } = makeTree({ "real.env": `K=${AWS_KEY}\n` });
+    cleanups.push(cleanup);
+    fs.symlinkSync(path.join(dir, "real.env"), path.join(dir, "link.env"));
+    const { io, out } = capture();
+    await main(["--verbose"], { ...io, cwd: dir });
+    assert.equal(out.stdout.trim().split("\n").length, 1);
+    assert.match(out.stderr, /skipped symbolic link: link\.env/);
   });
 
   it("skips binary files", async () => {

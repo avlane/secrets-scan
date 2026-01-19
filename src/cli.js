@@ -10,7 +10,7 @@ import { formatGithub, formatJson, formatSarif, formatSummary, formatText, useCo
 import { SEVERITIES, explainRule, ruleCatalog, selectRules } from "./rules.js";
 import { scanBuffer } from "./scanner.js";
 import { parseSize } from "./size.js";
-import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
+import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, looksBinary, walk } from "./walk.js";
 
 const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
@@ -47,6 +47,7 @@ Options:
       --write-baseline FILE  record the current findings in FILE and exit 0
       --color MODE  color the text report: auto (default), always or never
   -q, --quiet       do not print the summary line on stderr
+      --verbose     say on stderr which files were skipped and why
 
 Exit status: 0 nothing found, 1 secrets found, 2 error.
 `;
@@ -77,6 +78,7 @@ const OPTIONS = {
   "write-baseline": { type: "string" },
   color: { type: "string", default: "auto" },
   quiet: { type: "boolean", short: "q" },
+  verbose: { type: "boolean" },
 };
 const FORMATS = ["text", "json", "sarif", "github"];
 
@@ -126,7 +128,7 @@ async function collectSources({ positionals, values, context, cwd, stdin }) {
  * The files to scan for one PATH argument, as [{relative, read()}].
  * `relative` is relative to the scanned directory and uses "/" separators.
  */
-function sourcesFor(absoluteRoot, { git, staged, include, exclude, skip }) {
+function sourcesFor(absoluteRoot, { git, staged, include, exclude, skip, warn, note }) {
   const stat = fs.statSync(absoluteRoot);
   if (!stat.isDirectory()) {
     return [{ relative: path.basename(absoluteRoot), read: () => fs.readFileSync(absoluteRoot) }];
@@ -143,7 +145,9 @@ function sourcesFor(absoluteRoot, { git, staged, include, exclude, skip }) {
       return include.size === 0 || include.matches(relative);
     });
   } else {
-    relatives = [...walk(absoluteRoot, { include, exclude })]
+    const onError = (dir, error) => warn(`cannot read directory ${path.relative(absoluteRoot, dir) || "."}: ${error.code ?? error.message}`);
+    const onSkip = (relative, reason) => note(`skipped ${reason}: ${relative}`);
+    relatives = [...walk(absoluteRoot, { include, exclude, onError, onSkip })]
       .map((file) => path.relative(absoluteRoot, file).split(path.sep).join("/"));
   }
   return relatives
@@ -245,7 +249,13 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
   if ([values.git, values.staged, values.diff !== undefined, values.stdin].filter(Boolean).length > 1) {
     throw new UsageError("--git, --staged, --diff and --stdin cannot be combined");
   }
+  const warn = (message) => stderr.write(`secrets-scan: warning: ${message}\n`);
+  const note = (message) => {
+    if (values.verbose) stderr.write(`secrets-scan: ${message}\n`);
+  };
   const context = {
+    warn,
+    note,
     git: values.git,
     staged: values.staged,
     include: createMatcher(values.include ?? []),
@@ -257,15 +267,24 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
   let findings = [];
   let filesScanned = 0;
   let skippedLarge = 0;
+  let unreadable = 0;
   for (const source of await collectSources({ positionals, values, context, cwd, stdin })) {
     let buffer;
     try {
       buffer = source.read();
-    } catch {
-      continue; // vanished since it was listed, e.g. tracked but deleted
+    } catch (error) {
+      if (error.code === "ENOENT") continue; // vanished since it was listed, e.g. tracked but deleted
+      unreadable += 1;
+      warn(`cannot read ${source.relative}: ${error.code ?? error.message}`);
+      continue;
     }
     if (buffer.length > maxSize) {
       skippedLarge += 1;
+      note(`skipped (larger than --max-size): ${source.relative}`);
+      continue;
+    }
+    if (looksBinary(buffer)) {
+      note(`skipped binary file: ${source.relative}`);
       continue;
     }
     filesScanned += 1;
@@ -303,6 +322,6 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
   else if (values.format === "sarif") stdout.write(formatSarif(findings, { ...options, catalog: ruleCatalog() }));
   else if (values.format === "github") stdout.write(formatGithub(findings));
   else stdout.write(formatText(findings, options));
-  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge, stale }));
+  if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge, stale, unreadable }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }
