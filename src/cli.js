@@ -8,9 +8,9 @@ import { GitError, addedLines, listStagedFiles, listTrackedFiles, readStagedFile
 import { createMatcher } from "./glob.js";
 import { formatGithub, formatJson, formatSarif, formatSummary, formatText, useColor } from "./report.js";
 import { SEVERITIES, explainRule, ruleCatalog, selectRules } from "./rules.js";
-import { scanBuffer } from "./scanner.js";
+import { scanSources } from "./pipeline.js";
 import { parseSize } from "./size.js";
-import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, looksBinary, walk } from "./walk.js";
+import { DEFAULT_SKIPPED_FILES, hasBinaryExtension, walk } from "./walk.js";
 
 const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
@@ -131,7 +131,7 @@ async function collectSources({ positionals, values, context, cwd, stdin }) {
 function sourcesFor(absoluteRoot, { git, staged, include, exclude, skip, warn, note }) {
   const stat = fs.statSync(absoluteRoot);
   if (!stat.isDirectory()) {
-    return [{ relative: path.basename(absoluteRoot), read: () => fs.readFileSync(absoluteRoot) }];
+    return [{ relative: path.basename(absoluteRoot), read: () => fs.promises.readFile(absoluteRoot) }];
   }
   let relatives;
   if (staged) {
@@ -157,7 +157,7 @@ function sourcesFor(absoluteRoot, { git, staged, include, exclude, skip, warn, n
       relative,
       read: staged
         ? () => readStagedFile(absoluteRoot, relative)
-        : () => fs.readFileSync(path.join(absoluteRoot, ...relative.split("/"))),
+        : () => fs.promises.readFile(path.join(absoluteRoot, ...relative.split("/"))),
     }));
 }
 
@@ -264,32 +264,10 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
     exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
   const scanOptions = { entropy: selection.entropy && !values["no-entropy"], maxLineLength };
-  let findings = [];
-  let filesScanned = 0;
-  let skippedLarge = 0;
-  let unreadable = 0;
-  for (const source of await collectSources({ positionals, values, context, cwd, stdin })) {
-    let buffer;
-    try {
-      buffer = source.read();
-    } catch (error) {
-      if (error.code === "ENOENT") continue; // vanished since it was listed, e.g. tracked but deleted
-      unreadable += 1;
-      warn(`cannot read ${source.relative}: ${error.code ?? error.message}`);
-      continue;
-    }
-    if (buffer.length > maxSize) {
-      skippedLarge += 1;
-      note(`skipped (larger than --max-size): ${source.relative}`);
-      continue;
-    }
-    if (looksBinary(buffer)) {
-      note(`skipped binary file: ${source.relative}`);
-      continue;
-    }
-    filesScanned += 1;
-    findings.push(...scanBuffer(buffer, source.relative, selection.rules, scanOptions));
-  }
+  const sources = await collectSources({ positionals, values, context, cwd, stdin });
+  const scan = await scanSources(sources, { rules: selection.rules, scanOptions, maxSize, warn, note });
+  let findings = scan.findings;
+  const { filesScanned, skippedLarge, unreadable } = scan;
   const minimum = SEVERITIES.indexOf(values["min-severity"]);
   findings = findings.filter((f) => !isAllowed(f, allowlist) && SEVERITIES.indexOf(f.severity) >= minimum);
 
