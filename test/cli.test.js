@@ -106,6 +106,39 @@ describe("cli", () => {
     assert.equal(stdout, "::error file=src/k.env,line=1,col=5,endColumn=25,title=aws-access-key-id::AWS access key ID\n");
   });
 
+  it("writes the report to a file with --output", async () => {
+    const { dir, cleanup } = makeTree({ "k.env": `KEY=${AWS_KEY}\n` });
+    cleanups.push(cleanup);
+    const { io, out } = capture();
+    const code = await main(["--format", "sarif", "--output", "results.sarif"], { ...io, cwd: dir });
+    assert.equal(code, 1);
+    assert.equal(out.stdout, "");
+    assert.match(out.stderr, /1 potential secret/);
+    const written = JSON.parse(fs.readFileSync(path.join(dir, "results.sarif"), "utf8"));
+    assert.equal(written.runs[0].results.length, 1);
+    assert.deepEqual(fs.readdirSync(dir).sort(), ["k.env", "results.sarif"]);
+    // Running again finds nothing new in the report file itself.
+    const again = capture();
+    assert.equal(await main(["--format", "sarif", "--output", "results.sarif"], { ...again.io, cwd: dir }), 1);
+    assert.match(again.out.stderr, /scanned 1 file\n/);
+  });
+
+  it("--output never writes escape codes unless --color always", async () => {
+    const { dir, cleanup } = makeTree({ "k.env": `KEY=${AWS_KEY}\n` });
+    cleanups.push(cleanup);
+    const io = capture().io;
+    await main(["--output", "plain.txt", "--color", "auto"], { ...io, cwd: dir, env: {} });
+    assert.ok(!fs.readFileSync(path.join(dir, "plain.txt"), "utf8").includes("\x1b["));
+    await main(["--output", "colored.txt", "--color", "always"], { ...io, cwd: dir });
+    assert.ok(fs.readFileSync(path.join(dir, "colored.txt"), "utf8").includes("\x1b["));
+  });
+
+  it("--output into a missing directory is an error and leaves nothing behind", async () => {
+    const { code, stderr } = await run({ "k.env": `KEY=${AWS_KEY}\n` }, ["--output", "missing/dir/report.txt"]);
+    assert.equal(code, 2);
+    assert.match(stderr, /cannot write missing\/dir\/report\.txt: ENOENT/);
+  });
+
   it("rejects unknown formats", async () => {
     const { code, stderr } = await run({}, ["--format", "xml"]);
     assert.equal(code, 2);

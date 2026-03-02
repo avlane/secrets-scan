@@ -46,6 +46,7 @@ Options:
       --baseline FILE  ignore the findings recorded in FILE; only new ones are reported
       --write-baseline FILE  record the current findings in FILE and exit 0
       --color MODE  color the text report: auto (default), always or never
+  -o, --output FILE  write the report to FILE instead of standard output
   -q, --quiet       do not print the summary line on stderr
       --verbose     say on stderr which files were skipped and why
 
@@ -78,11 +79,24 @@ const OPTIONS = {
   "write-baseline": { type: "string" },
   color: { type: "string", default: "auto" },
   quiet: { type: "boolean", short: "q" },
+  output: { type: "string", short: "o" },
   verbose: { type: "boolean" },
 };
 const FORMATS = ["text", "json", "sarif", "github"];
 
 class UsageError extends Error {}
+
+/** Write to a temporary file next to the target and rename it, so readers never see half a report. */
+function writeFileAtomically(file, text, displayName) {
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporary, text);
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    throw new UsageError(`cannot write ${displayName}: ${error.code ?? error.message}`);
+  }
+}
 
 async function readAll(stream) {
   const chunks = [];
@@ -260,7 +274,7 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
     staged: values.staged,
     include: createMatcher(values.include ?? []),
     // A baseline file is full of hashes: never scan the one we are reading or writing.
-    skip: new Set([values.baseline, values["write-baseline"]].filter(Boolean).map((file) => path.resolve(cwd, file))),
+    skip: new Set([values.baseline, values["write-baseline"], values.output].filter(Boolean).map((file) => path.resolve(cwd, file))),
     exclude: createMatcher([...(values["no-default-skips"] ? [] : DEFAULT_SKIPPED_FILES), ...(values.exclude ?? [])]),
   };
   const scanOptions = { entropy: selection.entropy && !values["no-entropy"], maxLineLength };
@@ -294,12 +308,16 @@ async function run(argv, { stdout, stderr, cwd, env, stdin }) {
   const options = {
     showSecrets: values["show-secrets"],
     version: pkg.version,
-    color: useColor(values.color, stdout, env),
+    // Escape codes don't belong in a file unless they were asked for.
+    color: useColor(values.color, values.output ? {} : stdout, env),
   };
-  if (values.format === "json") stdout.write(formatJson(findings, options));
-  else if (values.format === "sarif") stdout.write(formatSarif(findings, { ...options, catalog: ruleCatalog() }));
-  else if (values.format === "github") stdout.write(formatGithub(findings));
-  else stdout.write(formatText(findings, options));
+  let report;
+  if (values.format === "json") report = formatJson(findings, options);
+  else if (values.format === "sarif") report = formatSarif(findings, { ...options, catalog: ruleCatalog() });
+  else if (values.format === "github") report = formatGithub(findings);
+  else report = formatText(findings, options);
+  if (values.output) writeFileAtomically(path.resolve(cwd, values.output), report, values.output);
+  else stdout.write(report);
   if (!values.quiet) stderr.write(formatSummary(findings, filesScanned, { baselined, skippedLarge, stale, unreadable }));
   return findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 }
