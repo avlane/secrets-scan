@@ -319,6 +319,16 @@ describe("cli", () => {
     assert.match(out.stderr, /skipped symbolic link: link\.env/);
   });
 
+  it("scans files saved as UTF-16 by Windows tools", async () => {
+    const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`token=${AWS_KEY}\r\n`, "utf16le")]);
+    const { dir, cleanup } = makeTree({});
+    cleanups.push(cleanup);
+    fs.writeFileSync(path.join(dir, "settings.ini"), utf16);
+    const { io, out } = capture();
+    assert.equal(await main([], { ...io, cwd: dir }), 1);
+    assert.match(out.stdout, /^settings\.ini:1:7 {2}aws-access-key-id/);
+  });
+
   it("skips binary files", async () => {
     const { code } = await run({ "data.bin": `\0${AWS_KEY}`, "image.png": AWS_KEY });
     assert.equal(code, 0);

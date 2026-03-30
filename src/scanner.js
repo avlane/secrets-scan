@@ -100,10 +100,30 @@ export function scanText(text, filePath, rules, { entropy = true, maxLineLength 
   return findings;
 }
 
+/**
+ * Decode a file to text, or return null if it is binary. A byte order mark selects UTF-8 or
+ * UTF-16 (Windows tools such as PowerShell write UTF-16 by default, and its NUL bytes would
+ * otherwise make the file look binary); without one, NUL bytes mean binary.
+ */
+export function decodeText(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.toString("utf8", 3);
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return buffer.toString("utf16le", 2);
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    const swapped = Buffer.from(buffer.subarray(2, 2 + (buffer.length - 2 - ((buffer.length - 2) % 2))));
+    return swapped.swap16().toString("utf16le");
+  }
+  if (looksBinary(buffer)) return null;
+  return buffer.toString("utf8");
+}
+
 /** Scan the bytes of a file; returns [] for binary content. */
 export function scanBuffer(buffer, relativePath, rules, options) {
-  if (looksBinary(buffer)) return [];
-  return scanText(buffer.toString("utf8"), relativePath, rules, options);
+  const text = decodeText(buffer);
+  return text === null ? [] : scanText(text, relativePath, rules, options);
 }
 
 /** Read and scan one file. */

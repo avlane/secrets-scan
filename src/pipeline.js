@@ -1,6 +1,5 @@
 import { mapConcurrent } from "./pool.js";
-import { scanBuffer } from "./scanner.js";
-import { looksBinary } from "./walk.js";
+import { decodeText, scanText } from "./scanner.js";
 
 export const DEFAULT_CONCURRENCY = 16;
 
@@ -25,12 +24,13 @@ export async function scanSources(sources, { rules, scanOptions, maxSize, warn =
       note(`skipped (larger than --max-size): ${source.relative}`);
       return [];
     }
-    if (looksBinary(buffer)) {
+    const text = decodeText(buffer);
+    if (text === null) {
       note(`skipped binary file: ${source.relative}`);
       return [];
     }
     stats.filesScanned += 1;
-    return scanBuffer(buffer, source.relative, rules, scanOptions);
+    return scanText(text, source.relative, rules, scanOptions);
   });
   return { findings: perSource.flat(), ...stats };
 }
