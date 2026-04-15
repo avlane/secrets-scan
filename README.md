@@ -1,80 +1,107 @@
 # secrets-scan
 
-Scan a directory (or the files tracked by git) for likely secrets: API keys, tokens,
-private keys and high-entropy strings. No dependencies, nothing leaves your machine. Needs Node.js 20 or newer.
+Finds likely secrets - API keys, tokens, private keys, passwords in URLs, high-entropy strings -
+in a directory, in the files git tracks, in what is staged for commit, or in the lines a pull
+request adds. No dependencies, nothing leaves your machine. Needs Node.js 20 or newer.
 
-Work in progress. Planned: provider-specific patterns, an entropy detector, an allowlist
-file, baselines for existing findings, and JSON / SARIF output.
+    $ npx secrets-scan
+    src/deploy.js:14:21  github-token  [high]  GitHub token: ghp_************
+    config/prod.env:3:12  generic-secret-assignment  [medium]  Hard-coded credential: Tr0u*********
+    secrets-scan: 2 potential secrets in 2 files (1 high, 1 medium); scanned 87 files
 
-    npx secrets-scan [PATH...]
+Matches are masked in every report (`--show-secrets` shows them). The exit status is 0 when
+nothing was found, 1 when something was, 2 on errors.
 
-Exit status: 0 when nothing was found, 1 when secrets were found, 2 on errors.
-Restrict the scan with `--include GLOB` and `--exclude GLOB` (both repeatable):
+> A scanner like this is a net, not a guarantee. It finds the credentials that look like
+> credentials. Treat anything it reports as leaked until proven otherwise, and rotate it.
 
-    secrets-scan . --exclude vendor --exclude '*.snap' --include '*.env'
+## Choosing what to scan
 
-Patterns without a `/` match names anywhere; patterns with a `/` start at the scanned
-directory; `**` crosses directories.
-## Allowlist
+| | |
+| --- | --- |
+| `secrets-scan [PATH...]` | walk the directories (default `.`), skipping `.git`, `node_modules`, binary files, lock files, `*.min.js` and source maps |
+| `--git` | only the files `git ls-files` lists |
+| `--staged` | the content staged in git's index - for a pre-commit hook |
+| `--diff REF` | only the lines added since `REF` (e.g. `origin/main`) - for pull requests |
+| `--stdin` | text piped in (`--stdin-filename NAME` to label it) |
+| `--include GLOB`, `--exclude GLOB` | restrict the files; `vendor`, `*.snap` match names anywhere, `docs/gen` is anchored, `**` crosses directories |
+| `--max-size 1M` | skip bigger files (reported in the summary) |
+| `--no-default-skips` | scan lock files, minified bundles and source maps too |
 
-Findings that are fine can be listed in `.secrets-allowlist` (or `--allowlist FILE`), one entry
-per line, `#` for comments:
+UTF-16 files (as written by PowerShell) are decoded; binary files are skipped.
+Unreadable files and directories are warnings, never silence; `--verbose` lists everything skipped.
 
-    path: docs/examples/**                      # every finding in these files
-    regex: ^AKIAIOSFODNN7EXAMPLE$               # findings whose secret text matches
-    rule: generic-secret-assignment @ test/**   # one rule, optionally only in some files
-    fingerprint: 3fa9c1d2e4b5a6978c0d1e2f3a4b5c6d   # one finding, from --format json
+## What it detects
 
-Any entry may end with `expires=2026-01-31`; after that day it is ignored (and a warning
-says so), so temporary exceptions don't become permanent.
-## Inline ignores
+`secrets-scan --list-rules` lists them, `--explain RULE` describes one.
 
-Silence a single finding with a comment in the file itself:
+* **Provider credentials** (severity high): AWS access key ids, GitHub tokens, Slack tokens and
+  webhooks, Stripe, Google API keys and service account files, npm, PyPI, SendGrid, Twilio,
+  Mailgun, Shopify, DigitalOcean, Databricks, Sentry, Square, Discord webhooks, Azure storage
+  keys, private key blocks, passwords in URLs.
+* **Generic** (medium): `password = "..."`-style assignments, JSON Web Tokens whose header
+  decodes, and high-entropy strings.
+
+Choose rules with `--only ID` / `--disable ID`; `--min-severity medium` hides the rest.
+
+### Keeping false positives low
+
+* Placeholders are ignored: `changeme`, `your_password_here`, `xxxxxxxx`, `${DB_PASSWORD}`,
+  `process.env.TOKEN`, `{{ vault_password }}`, the `...EXAMPLE` keys from AWS's documentation.
+* Identifier-like values (`validation_failed_message`) are not passwords.
+* The entropy detector skips UUIDs, `sha512-...` integrity hashes and inline base64 data, only
+  reports hex strings after a word like `secret`, `token` or `key`, and requires other tokens to mix
+  lower case, upper case and digits. The price is that a random hex string with no hint around it
+  is not found.
+* Minified lines longer than `--max-line-length` only get the specific rules.
+
+## Silencing findings
+
+In the file itself, in whatever comment syntax it uses:
 
     const key = "AKIAIOSFODNN7EXAMPLE"; // secrets-scan:ignore
     # secrets-scan:ignore-next-line
     password = "not-a-real-password"
 
-and a whole file with `secrets-scan:ignore-file` anywhere in it.
-## Scanning what git tracks
+(`secrets-scan:ignore-file` anywhere skips the whole file.) For everything else use
+`.secrets-allowlist` (or `--allowlist FILE`), one entry per line:
 
-`secrets-scan --git` scans exactly the files `git ls-files` lists - no untracked build output,
-no ignored files - which is usually what a CI job wants.
-## Baselines
+    path: docs/examples/**                      # every finding in these files
+    regex: ^AKIAIOSFODNN7EXAMPLE$               # findings whose secret text matches
+    rule: generic-secret-assignment @ test/**   # one rule, optionally only in some files
+    fingerprint: 3fa9c1d2e4b5a6978c0d1e2f3a4b5c6d   # one finding, from --format json
+    path: legacy/**   expires=2026-12-31        # temporary: stops applying after the date
 
-To adopt secrets-scan on a project that already contains findings, record them once and fail
-only on new ones:
+## Adopting it on an existing project: baselines
 
-    secrets-scan --write-baseline .secrets-baseline.json
-    secrets-scan --baseline .secrets-baseline.json
+    secrets-scan --write-baseline .secrets-baseline.json     # record what exists today
+    secrets-scan --baseline .secrets-baseline.json            # fail only on new findings
 
-The baseline stores hashes (rule + path + secret), never the secrets, and survives line
-number changes.
-## Output formats
+The baseline holds hashes (rule, path, secret), never the secrets; it survives line number
+changes, and the summary tells you when entries have gone stale. Or skip baselines and scan
+only new lines: `secrets-scan --diff origin/main`.
 
-`--format text` (default), `--format json`, `--format sarif` for GitHub code scanning
-and IDE viewers, and `--format github` for annotations in a workflow run:
+## Output
 
-    secrets-scan --format sarif > results.sarif
+`--format text` (default), `json`, `sarif` (GitHub code scanning, IDEs) or `github` (annotations in
+a workflow run). `--output FILE` writes the report to a file; the summary line goes to stderr
+(`--quiet` drops it). `--color auto|always|never` honours `NO_COLOR`.
 
-Secrets are masked in every format unless you pass `--show-secrets`; SARIF never contains them.
-## Pull requests: only what is new
+## CI and hooks
 
-`secrets-scan --diff origin/main` scans only the lines added since a ref - what a pull request
-introduces - and reports them at their real line numbers. Old findings in untouched code never
-fail the build, and no baseline is needed.
+* Pre-commit: [examples/pre-commit](examples/pre-commit) runs `secrets-scan --staged`.
+* Pull requests: [examples/github-actions.yml](examples/github-actions.yml) annotates added lines.
+* Whole repository: `npx secrets-scan --git --min-severity medium`.
 
-## Pre-commit
+## Limits
 
-`secrets-scan --staged` scans the content staged in git's index (not the working tree), which
-is what a pre-commit hook needs - see [examples/pre-commit](examples/pre-commit):
+Only the current content is scanned, not git history. Patterns cover the formats the providers
+document; custom or rotated formats need a rule of their own (or the entropy detector). A secret
+split over several lines is only found if its first line matches.
 
-    #!/bin/sh
-    exec npx --no-install secrets-scan --staged --min-severity medium
+## Development
 
-A pull request check that annotates the changed lines is in
-[examples/github-actions.yml](examples/github-actions.yml). Exit status 1 fails the job.
-## Standard input
+    npm test
 
-`secrets-scan --stdin --stdin-filename deploy/prod.env < file` (or the path `-`) scans text
-piped in, for example the output of `git show` or a template renderer.
+The tests build their fake credentials from pieces (`test/fakes.js`), so scanning this repository
+finds nothing; CI runs `secrets-scan --git` on itself.
