@@ -99,6 +99,8 @@ Only the current content is scanned, not git history. Patterns cover the formats
 document; custom or rotated formats need a rule of their own (or the entropy detector). A secret
 split over several lines is only found if its first line matches.
 
+See [CHANGELOG.md](CHANGELOG.md) for what changed between versions.
+
 ## Development
 
     npm test

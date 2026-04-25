@@ -1,6 +1,6 @@
 {
   "name": "secrets-scan",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Scan a directory or the files tracked by git for likely secrets",
   "type": "module",
   "bin": {
